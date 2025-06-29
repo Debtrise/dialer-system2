@@ -165,42 +165,49 @@ module.exports = function(app, sequelize, authenticateToken, optisignsModels, op
   // Get displays
   router.get('/optisigns/displays', authenticateToken, async (req, res) => {
     try {
-      const { page = 1, limit = 500, status, isOnline, location } = req.query;
+      const { page = 1, limit, status, isOnline, location } = req.query;
       const tenantId = req.user.tenantId;
-      
+
       const whereClause = { tenant_id: tenantId };
       if (status) whereClause.status = status;
       if (isOnline !== undefined) whereClause.is_online = isOnline === 'true';
       if (location) whereClause.location = { [sequelize.Sequelize.Op.iLike]: `%${location}%` };
-      
-      const displays = await optisignsModels.OptisignsDisplay.findAll({
+
+      const queryOptions = {
         where: whereClause,
-        limit: parseInt(limit),
-        offset: (parseInt(page) - 1) * parseInt(limit),
         order: [['name', 'ASC']],
         attributes: { exclude: ['metadata'] }
-      });
-      
+      };
+
+      if (limit) {
+        queryOptions.limit = parseInt(limit);
+        queryOptions.offset = (parseInt(page) - 1) * parseInt(limit);
+      }
+
+      const displays = await optisignsModels.OptisignsDisplay.findAll(queryOptions);
+
       const count = await optisignsModels.OptisignsDisplay.count({ where: whereClause });
-      
+
       const statistics = {
         total: count,
         online: displays.filter(d => d.isOnline).length,
         offline: displays.filter(d => !d.isOnline).length,
         configured: await optisignsService.isConfigured(tenantId)
       };
-      
-      res.json({
-        displays: displays,
-        pagination: {
+
+      const response = { displays, statistics };
+
+      if (limit) {
+        response.pagination = {
           currentPage: parseInt(page),
           totalPages: Math.ceil(count / parseInt(limit)),
           totalCount: count,
           hasNextPage: parseInt(page) * parseInt(limit) < count,
           hasPreviousPage: parseInt(page) > 1
-        },
-        statistics: statistics
-      });
+        };
+      }
+
+      res.json(response);
     } catch (error) {
       console.error('Error getting displays:', error.message);
       res.status(400).json({ error: error.message });
@@ -235,15 +242,31 @@ module.exports = function(app, sequelize, authenticateToken, optisignsModels, op
       });
       
       if (!display) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           error: 'Display not found',
           displayId: displayId,
           timestamp: new Date().toISOString()
         });
       }
-      
+
+      let liveDisplay = null;
+      try {
+        liveDisplay = await optisignsService.getDevice(
+          tenantId,
+          display.optisignsDisplayId
+        );
+        await display.update({
+          name: liveDisplay.deviceName || liveDisplay.name || display.name,
+          location: liveDisplay.location || display.location,
+          status: liveDisplay.status || display.status,
+          metadata: liveDisplay
+        });
+      } catch (liveErr) {
+        console.error('Failed to fetch live display from OptiSigns:', liveErr.message);
+      }
+
       res.json({
-        display,
+        display: liveDisplay ? { ...display.toJSON(), ...liveDisplay } : display,
         configured: await optisignsService.isConfigured(tenantId),
         message: 'Display details retrieved successfully',
         timestamp: new Date().toISOString()
