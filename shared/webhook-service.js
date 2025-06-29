@@ -417,13 +417,14 @@ class WebhookService {
             optimizeForDigitalSignage: true
           };
           
-          contentExportId = await this.contentService.generateProjectExport(
+          const exportInfo = await this.contentService.generateProjectExport(
             contentProject.id,
             webhookEndpoint.tenantId,
             exportOptions
           );
-          
-          console.log('📦 Generated content export:', contentExportId);
+          contentExportId = exportInfo.exportId;
+
+          console.log('📦 Generated content export:', exportInfo.publicUrl);
           
           // Publish to OptiSigns
           const publishResult = await this.contentService.publishToOptiSigns(

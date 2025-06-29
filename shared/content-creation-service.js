@@ -1446,7 +1446,6 @@ async generateProjectExport(projectId, tenantId, options = {}) {
     const fileName = `${project.name.replace(/[^a-z0-9]/gi, '_')}_${Date.now()}.${format}`;
     const filePath = path.join(this.directories.exports, fileName);
 
-    // Ensure exports directory exists
     await fs.mkdir(this.directories.exports, { recursive: true });
 
     let fileContent;
@@ -1470,10 +1469,8 @@ async generateProjectExport(projectId, tenantId, options = {}) {
         throw new Error(`Unsupported export format: ${format}`);
     }
 
-    // Save file
     await fs.writeFile(filePath, fileContent);
 
-    // Create file buffer for upload
     const fileBuffer = Buffer.from(fileContent);
     const file = {
       buffer: fileBuffer,
@@ -1482,13 +1479,37 @@ async generateProjectExport(projectId, tenantId, options = {}) {
       size: fileBuffer.length
     };
 
+    const { v4: uuidv4 } = require('uuid');
+    const exportId = uuidv4();
+    const baseUrl = process.env.BASE_URL || 'http://34.122.156.88:3001';
+    const publicUrl = `${baseUrl}/api/content/public/${exportId}`;
+
+    const exportRecord = await this.models.ContentExport.create({
+      id: exportId,
+      projectId,
+      tenantId: tenantId.toString(),
+      exportType: options.exportType || 'final',
+      format,
+      quality: options.quality || 'high',
+      resolution: project.canvasSize || { width: 1920, height: 1080 },
+      filePath,
+      fileSize: file.size,
+      publicUrl,
+      downloadUrl: publicUrl,
+      processingStatus: 'completed',
+      variableData: options.variables || {},
+      exportSettings: options.exportSettings || {},
+      createdBy: options.userId || project.createdBy
+    });
+
     console.log(`✅ Project export generated: ${fileName} (${file.size} bytes)`);
+    console.log(`🌐 Public URL: ${publicUrl}`);
 
     return {
-      file,
+      exportId: exportRecord.id,
+      publicUrl,
       filePath,
       format,
-      type: format === 'html' ? 'web' : 'image',
       fileSize: file.size
     };
   } catch (error) {
