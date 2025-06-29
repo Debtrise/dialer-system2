@@ -62,6 +62,7 @@ let webhookModels = null;
 let twilioModels = null;
 let templateModels = null;
 let reportingModels = null;
+let reportBuilderModels = null;
 let recordingModels = null;
 let tracersModels = null;
 let optisignsModels = null;
@@ -976,6 +977,15 @@ try {
     console.error('Error initializing reporting module:', error);
   }
 
+  // Initialize report builder module
+  try {
+    const initReportBuilder = require('../shared/report-builder-routes');
+    reportBuilderModels = initReportBuilder(app, sequelize, authenticateToken);
+    console.log('Report builder module initialized successfully');
+  } catch (error) {
+    console.error('Error initializing report builder module:', error);
+  }
+
  try {
     const initRecordings = require('../shared/recording-routes');
     recordingModels = initRecordings(app, sequelize, authenticateToken);
@@ -994,9 +1004,10 @@ try {
     console.error('Error initializing Optisigns module:', error);
   }
   
-  return { 
+  return {
     dialplanBuilder,
-    recordingModels 
+    recordingModels,
+    reportBuilderModels
   };
 }
 
@@ -2277,7 +2288,7 @@ async function startServer() {
     console.log('Database models synchronized.');
     
     // Initialize modules before defining routes
-    const { dialplanBuilder, recordingModels } = await initializeModules();
+    const { dialplanBuilder, recordingModels, reportBuilderModels } = await initializeModules();
     
     // Define all routes
     await defineRoutes(dialplanBuilder);
@@ -2478,6 +2489,7 @@ console.log(`
       - Twilio SMS ${twilioModels ? '✓' : '✗'}
       - Template System ${templateModels ? '✓' : '✗'}
       - Reporting & Analytics ${reportingModels ? '✓' : '✗'}
+      - Report Builder ${reportBuilderModels ? '✓' : '✗'}
       - Recording Management ${recordingModels ? '✓' : '✗'}
       - Optisigns Integration ${optisignsModels ? '✓' : '✗'}
     `);
