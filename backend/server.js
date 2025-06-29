@@ -180,6 +180,7 @@ const Tenant = sequelize.define('Tenant', {
   dialerConfig: {
     type: DataTypes.JSONB,
     defaultValue: {
+      enabled: true,
       speed: 1.5,
       minAgentsAvailable: 2,
       autoDelete: false,
