@@ -4,6 +4,7 @@
 const crypto = require('crypto');
 const { Op } = require('sequelize');
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs').promises;
 
 class WebhookService {
   constructor(models, journeyService = null, contentService = null, optisignsService = null) {
@@ -448,6 +449,43 @@ class WebhookService {
             error: error.message
           });
           announcementMetricData.failedDisplays = targetDisplays.length;
+        }
+      }
+
+      // Optional video celebration
+      if (announcementConfig.videoCelebration?.enabled && extractedVariables.variables.rep_photo) {
+        try {
+          const videoData = {
+            repName: extractedVariables.variables.rep_name,
+            repPhotoUrl: extractedVariables.variables.rep_photo,
+            dealAmount: extractedVariables.variables.deal_amount,
+            companyName: extractedVariables.variables.company_name
+          };
+
+          const videoInfo = await this.contentService.generateCelebrationVideo(videoData);
+          const videoBuffer = await fs.readFile(videoInfo.filePath);
+          const uploaded = await this.optisignsService.uploadFileAsBase64(
+            webhookEndpoint.tenantId,
+            videoBuffer,
+            `celebration_${Date.now()}.mp4`,
+            `celebration_${Date.now()}.mp4`,
+            { contentType: 'video/mp4' }
+          );
+
+          for (const display of targetDisplays) {
+            await this.optisignsService.takeoverDevice(
+              webhookEndpoint.tenantId,
+              display.id,
+              'ASSET',
+              uploaded.optisignsId,
+              {
+                duration: announcementConfig.optisigns.takeover?.duration || 30,
+                priority: announcementConfig.optisigns.takeover?.priority || 'HIGH'
+              }
+            );
+          }
+        } catch (error) {
+          console.error('Error publishing celebration video:', error);
         }
       }
       

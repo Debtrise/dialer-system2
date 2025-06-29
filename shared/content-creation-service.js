@@ -36,7 +36,8 @@ class ContentCreationService {
       streaming: path.join(this.uploadPath, 'streaming'),
       temp: path.join(this.uploadPath, 'temp'),
       optimized: path.join(this.uploadPath, 'optimized'),
-      downloaded: path.join(this.uploadPath, 'downloaded') // NEW: for downloaded external images
+      downloaded: path.join(this.uploadPath, 'downloaded'), // for downloaded external images
+      videos: path.join(this.uploadPath, 'videos') // generated announcement videos
     };
     
     // Element type categorization
@@ -2181,7 +2182,66 @@ async generateProjectImage(project, options = {}) {
     // Return minimal PNG buffer
     return Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
   }
-}
+ }
+
+  /**
+   * Generate a short celebration video using ffmpeg and return local path
+   * and public URL. The video shows the rep photo and basic deal info.
+   */
+  async generateCelebrationVideo(data = {}) {
+    try {
+      const {
+        repName = 'Sales Rep',
+        repPhotoUrl,
+        dealAmount = '',
+        companyName = ''
+      } = data;
+
+      if (!repPhotoUrl) {
+        throw new Error('repPhotoUrl is required to generate the video');
+      }
+
+      await fs.mkdir(this.directories.videos, { recursive: true });
+      await fs.mkdir(this.directories.temp, { recursive: true });
+
+      const tempPhoto = path.join(this.directories.temp, `photo_${Date.now()}.png`);
+
+      if (repPhotoUrl.startsWith('http')) {
+        const response = await axios.get(repPhotoUrl, { responseType: 'arraybuffer' });
+        await fs.writeFile(tempPhoto, response.data);
+      } else {
+        await fs.copyFile(repPhotoUrl, tempPhoto);
+      }
+
+      const outputName = `celebration_${Date.now()}.mp4`;
+      const outputPath = path.join(this.directories.videos, outputName);
+      const fontPath = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+
+      await new Promise((resolve, reject) => {
+        ffmpeg()
+          .input('color=c=black:s=1920x1080:d=5')
+          .input(tempPhoto)
+          .complexFilter([
+            '[1:v] scale=500:500 [photo]',
+            '[0:v][photo] overlay=(W-w)/2:(H-h)/2',
+            `drawtext=fontfile=${fontPath}:text='${repName}':fontcolor=white:fontsize=60:x=(w-text_w)/2:y=50`,
+            `drawtext=fontfile=${fontPath}:text='${dealAmount} ${companyName}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=H-120`
+          ])
+          .outputOptions(['-t 5', '-pix_fmt yuv420p', '-r 30'])
+          .save(outputPath)
+          .on('end', resolve)
+          .on('error', reject);
+      });
+
+      const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
+      const publicUrl = `${baseUrl}/uploads/content/videos/${outputName}`;
+
+      return { filePath: outputPath, publicUrl };
+    } catch (err) {
+      console.error('Error generating celebration video:', err);
+      throw err;
+    }
+  }
 }
 
 

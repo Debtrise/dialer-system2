@@ -353,6 +353,44 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
     }
   });
 
+  // Generate celebration video for a sales rep
+  router.post('/sales-rep-photos/generate-video', authenticateToken, async (req, res) => {
+    try {
+      const { repEmail, repName, dealAmount, companyName } = req.body;
+
+      if (!repEmail) {
+        return res.status(400).json({ error: 'repEmail is required' });
+      }
+
+      const asset = await ContentAsset.findOne({
+        where: {
+          tenantId: req.user.tenantId,
+          categories: {
+            [sequelize.Sequelize.Op.overlap]: ['Sales Reps']
+          },
+          [sequelize.Sequelize.Op.and]: [sequelize.literal(`metadata->>'repEmail' = :repEmail`)]
+        },
+        replacements: { repEmail }
+      });
+
+      if (!asset) {
+        return res.status(404).json({ error: 'Photo not found for this sales rep' });
+      }
+
+      const videoInfo = await contentService.generateCelebrationVideo({
+        repName: repName || asset.metadata?.repName || repEmail,
+        repPhotoUrl: asset.publicUrl,
+        dealAmount,
+        companyName
+      });
+
+      res.json({ videoUrl: videoInfo.publicUrl });
+    } catch (error) {
+      console.error('Error generating celebration video:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   // Delete sales rep photo - FIXED query
   router.delete('/sales-rep-photos/:id', authenticateToken, async (req, res) => {
     try {
