@@ -27,6 +27,7 @@ const DialerSystem = () => {
   
   // Dialer configuration
   const [dialerConfig, setDialerConfig] = useState({
+    enabled: true,
     speed: 1.5,
     minAgentsAvailable: 2,
     source: 'BTR',
@@ -144,6 +145,7 @@ const DialerSystem = () => {
       if (tenantData.dialerConfig) {
         setDialerConfig({
           ...dialerConfig,
+          enabled: tenantData.dialerConfig.enabled !== false,
           speed: tenantData.dialerConfig.speed || 1.5,
           minAgentsAvailable: tenantData.dialerConfig.minAgentsAvailable || 2,
           source: tenantData.apiConfig?.source || 'BTR',
@@ -298,6 +300,7 @@ const DialerSystem = () => {
         amiConfig: amiConfig,
         schedule: schedule,
         dialerConfig: {
+          enabled: dialerConfig.enabled,
           speed: dialerConfig.speed,
           minAgentsAvailable: dialerConfig.minAgentsAvailable,
           autoDelete: dialerConfig.autoDelete,
@@ -643,11 +646,23 @@ const DialerSystem = () => {
       
       <div className="bg-white p-4 rounded-lg shadow">
         <h3 className="font-medium mb-3">Lead Management</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-gray-500 mb-1">Sort Order</label>
-            <select
-              value={dialerConfig.sortOrder}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="flex items-center">
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={dialerConfig.enabled}
+              onChange={(e) => updateDialerConfig('enabled', e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            <span className="ml-3 text-sm font-medium text-gray-900">Dialer Enabled</span>
+          </label>
+        </div>
+        <div>
+          <label className="block text-sm text-gray-500 mb-1">Sort Order</label>
+          <select
+            value={dialerConfig.sortOrder}
               onChange={(e) => updateDialerConfig('sortOrder', e.target.value)}
               className="w-full p-2 border border-gray-300 rounded"
             >
@@ -774,9 +789,21 @@ const DialerSystem = () => {
           <div className="mt-6">
             <h3 className="font-medium mb-3">Upload Options</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex items-center">
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={dialerConfig.enabled}
+                    onChange={(e) => updateDialerConfig('enabled', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  <span className="ml-3 text-sm font-medium text-gray-900">Dialer Enabled</span>
+                </label>
+              </div>
               <div>
                 <label className="block text-sm text-gray-500 mb-1">Sort Order</label>
-                <select 
+                <select
                   className="w-full p-2 border border-gray-300 rounded"
                   value={dialerConfig.sortOrder}
                   onChange={(e) => updateDialerConfig('sortOrder', e.target.value)}

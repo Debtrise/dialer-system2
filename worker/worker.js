@@ -135,6 +135,7 @@ const Tenant = sequelize.define('Tenant', {
   dialerConfig: {
     type: DataTypes.JSONB,
     defaultValue: {
+      enabled: true,
       speed: 1.5,
       minAgentsAvailable: 2,
       autoDelete: false,
@@ -670,6 +671,11 @@ const processDialerQueue = async (tenantId) => {
     const tenant = await Tenant.findByPk(tenantId);
     if (!tenant) {
       console.error(`Tenant ${tenantId} not found`);
+      return;
+    }
+
+    if (tenant.dialerConfig && tenant.dialerConfig.enabled === false) {
+      console.log(`Dialer disabled for tenant ${tenantId}`);
       return;
     }
     
