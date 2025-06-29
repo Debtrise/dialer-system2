@@ -39,11 +39,16 @@ class TracersService {
     // Add request interceptor to try different auth header formats
     this.apiClient.interceptors.request.use((config) => {
       // Try different authentication header formats based on environment variable
-      const authMethod = process.env.GALAXY_AUTH_METHOD || 'galaxy-token';
+      // Default to HTTP Basic auth which is what the Tracers API expects
+      const authMethod = process.env.GALAXY_AUTH_METHOD || 'basic';
       
       switch (authMethod) {
         case 'galaxy-token':
           config.headers['galaxy-token'] = this.apiToken;
+          break;
+        case 'basic':
+          // Standard HTTP basic authentication header
+          config.headers['Authorization'] = `Basic ${this.apiToken}`;
           break;
         case 'bearer':
           config.headers['Authorization'] = `Bearer ${this.apiToken}`;
@@ -400,7 +405,7 @@ class TracersService {
       
       console.log('Testing TracersAPI connection...');
       console.log('URL:', this.apiConfig.baseUrl);
-      console.log('Auth Method:', process.env.GALAXY_AUTH_METHOD || 'galaxy-token');
+      console.log('Auth Method:', process.env.GALAXY_AUTH_METHOD || 'basic');
       
       const response = await this.apiClient.post('/PersonSearch', testRequest);
       
@@ -414,7 +419,7 @@ class TracersService {
           message: error?.message || error?.code || 'Unknown error',
           authenticated: !error?.code?.toLowerCase().includes('token'),
           errorDetails: error,
-          authMethod: process.env.GALAXY_AUTH_METHOD || 'galaxy-token',
+          authMethod: process.env.GALAXY_AUTH_METHOD || 'basic',
           apiUrl: this.apiConfig.baseUrl
         };
       }
@@ -424,7 +429,7 @@ class TracersService {
         message: 'TracersAPI connection successful',
         authenticated: true,
         profileName: this.apiConfig.apName,
-        authMethod: process.env.GALAXY_AUTH_METHOD || 'galaxy-token',
+        authMethod: process.env.GALAXY_AUTH_METHOD || 'basic',
         apiUrl: this.apiConfig.baseUrl
       };
     } catch (error) {
@@ -441,7 +446,7 @@ class TracersService {
         status: error.response?.status,
         authenticated: !isTokenError,
         error: errorData?.error || { message: error.message },
-        authMethod: process.env.GALAXY_AUTH_METHOD || 'galaxy-token',
+        authMethod: process.env.GALAXY_AUTH_METHOD || 'basic',
         apiUrl: this.apiConfig.baseUrl,
         fullError: errorData // Include full error for debugging
       };
