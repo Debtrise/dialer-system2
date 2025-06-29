@@ -1,0 +1,140 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deal Closed</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #000;
+        }
+        .canvas {
+            position: relative;
+            width: 1920px;
+            height: 1080px;
+            background-color: #7d3636;
+            overflow: hidden;
+        }
+        .element {
+            position: absolute;
+        }
+        /* Enhanced text styles */
+        .text-element {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.5;
+        }
+        
+    /* Marquee animation */
+    @keyframes marquee {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-100%); }
+    }
+    .marquee-container {
+      overflow: hidden;
+    }
+    .marquee-content {
+      display: inline-block;
+      white-space: nowrap;
+    }
+    
+    /* Typewriter cursor */
+    .typewriter-cursor {
+      animation: blink 1s infinite;
+    }
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0; }
+    }
+  
+    </style>
+</head>
+<body>
+    <div class="canvas" id="main-canvas">
+        <div class="element text-element" 
+                    data-element-id="4c32247a-1609-4ac7-85a3-672552dbf23e"
+                    style="
+    position: absolute;
+    left: 560px;
+    top: 899.0600405537424px;
+    width: 800px;
+    height: 60px;
+  color: #ffffff;opacity: 0.9;font-size: 36px;text-align: center;z-index: 10;">
+                    ${deal_amount} - {company_name}
+                  </div><div class="element text-element" 
+                    data-element-id="30850638-c0f7-4a69-b69b-6503ad23caa3"
+                    style="
+    position: absolute;
+    left: 560px;
+    top: 787.0436658572672px;
+    width: 800px;
+    height: 80px;
+  color: #ffffff;font-size: 48px;text-align: center;z-index: 10;">
+                    Congratulations {rep_name}!
+                  </div><div class="element text-element" 
+                    data-element-id="547866a7-835a-4cf3-9b90-59cc20e5726b"
+                    style="
+    position: absolute;
+    left: 560px;
+    top: 162.73216545256753px;
+    width: 800px;
+    height: 120px;
+  color: #ffffff;font-size: 72px;text-align: center;font-weight: bold;z-index: 10;">
+                    🎉 Deal Closed! 🎉
+                  </div><div class="element text-element" 
+                    data-element-id="5552217b-824f-4a5d-8995-5befef770ab2"
+                    style="
+    position: absolute;
+    left: 737px;
+    top: 411.3333282470703px;
+    width: 400px;
+    height: 80px;
+  font-size: 48px;background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);font-family: Inter, sans-serif;font-weight: bold;-webkit-background-clip: text;-webkit-text-fill-color: transparent;color: #000000;z-index: 10;">
+                    Gradient Text
+                  </div>
+    </div>
+    <script>
+        
+    console.log('Project loaded with 4 elements');
+    
+    // Auto-refresh if specified
+    
+    
+    // Typewriter effect
+    document.querySelectorAll('.typewriter-text').forEach(element => {
+      const text = element.getAttribute('data-text');
+      const speed = parseInt(element.getAttribute('data-speed')) || 80;
+      const contentEl = element.querySelector('.typewriter-content');
+      if (contentEl && text) {
+        let i = 0;
+        function typeWriter() {
+          if (i < text.length) {
+            contentEl.textContent += text.charAt(i);
+            i++;
+            setTimeout(typeWriter, speed);
+          }
+        }
+        typeWriter();
+      }
+    });
+    
+    // Element interactions
+  
+    </script>
+</body>
+</html>

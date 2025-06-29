@@ -1,0 +1,428 @@
+[
+  {
+    "name": "Extension",
+    "category": "entryPoint",
+    "description": "Defines an extension within a context",
+    "icon": "phone",
+    "backgroundColor": "#4caf50",
+    "validConnections": ["application", "flowControl"],
+    "properties": [
+      {
+        "name": "exten",
+        "displayName": "Extension Number",
+        "type": "string",
+        "description": "The extension number or pattern (e.g., 123, _X., etc.)",
+        "required": true,
+        "validation": {
+          "pattern": "^[_0-9A-Za-z\\.\\+\\!]+$"
+        }
+      },
+      {
+        "name": "priority",
+        "displayName": "Priority",
+        "type": "number",
+        "description": "The priority number (typically 1 for first action)",
+        "defaultValue": 1,
+        "required": true
+      },
+      {
+        "name": "label",
+        "displayName": "Label",
+        "type": "string",
+        "description": "Optional label for this priority",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "Include",
+    "category": "entryPoint",
+    "description": "Includes another context",
+    "icon": "code-merge",
+    "backgroundColor": "#2196f3",
+    "asteriskApp": "include",
+    "properties": [
+      {
+        "name": "context",
+        "displayName": "Context Name",
+        "type": "string",
+        "description": "Name of the context to include",
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "Dial",
+    "category": "application",
+    "description": "Dials a channel",
+    "icon": "phone-outgoing",
+    "backgroundColor": "#ff9800",
+    "asteriskApp": "Dial",
+    "validConnections": ["application", "flowControl"],
+    "properties": [
+      {
+        "name": "technology",
+        "displayName": "Technology",
+        "type": "select",
+        "options": [
+          { "label": "SIP", "value": "SIP" },
+          { "label": "PJSIP", "value": "PJSIP" },
+          { "label": "IAX2", "value": "IAX2" },
+          { "label": "DAHDI", "value": "DAHDI" },
+          { "label": "Local", "value": "Local" }
+        ],
+        "defaultValue": "PJSIP",
+        "required": true
+      },
+      {
+        "name": "destination",
+        "displayName": "Destination",
+        "type": "string",
+        "description": "The endpoint to dial",
+        "required": true
+      },
+      {
+        "name": "timeout",
+        "displayName": "Timeout",
+        "type": "number",
+        "description": "Timeout in seconds",
+        "defaultValue": 30,
+        "required": false
+      },
+      {
+        "name": "options",
+        "displayName": "Options",
+        "type": "string",
+        "description": "Dial options (e.g., m, t, T)",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "Answer",
+    "category": "application",
+    "description": "Answers the channel",
+    "icon": "phone-incoming",
+    "backgroundColor": "#4caf50",
+    "asteriskApp": "Answer",
+    "validConnections": ["application", "flowControl"],
+    "properties": [
+      {
+        "name": "delay",
+        "displayName": "Delay",
+        "type": "number",
+        "description": "Delay before answer in milliseconds",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "Hangup",
+    "category": "application",
+    "description": "Hangs up the channel",
+    "icon": "phone-off",
+    "backgroundColor": "#f44336",
+    "asteriskApp": "Hangup",
+    "validConnections": [],
+    "properties": [
+      {
+        "name": "cause",
+        "displayName": "Cause Code",
+        "type": "number",
+        "description": "Hangup cause code",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "Playback",
+    "category": "application",
+    "description": "Plays an audio file",
+    "icon": "volume-2",
+    "backgroundColor": "#9c27b0",
+    "asteriskApp": "Playback",
+    "validConnections": ["application", "flowControl"],
+    "properties": [
+      {
+        "name": "filename",
+        "displayName": "File Name",
+        "type": "string",
+        "description": "Audio file to play",
+        "required": true
+      },
+      {
+        "name": "options",
+        "displayName": "Options",
+        "type": "string",
+        "description": "Playback options",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "Queue",
+    "category": "application",
+    "description": "Places the call into a queue",
+    "icon": "users",
+    "backgroundColor": "#673ab7",
+    "asteriskApp": "Queue",
+    "validConnections": ["application", "flowControl"],
+    "properties": [
+      {
+        "name": "queuename",
+        "displayName": "Queue Name",
+        "type": "string",
+        "description": "Name of the queue",
+        "required": true
+      },
+      {
+        "name": "options",
+        "displayName": "Options",
+        "type": "string",
+        "description": "Queue options",
+        "required": false
+      },
+      {
+        "name": "timeout",
+        "displayName": "Timeout",
+        "type": "number",
+        "description": "Timeout in seconds",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "Voicemail",
+    "category": "application",
+    "description": "Sends the call to voicemail",
+    "icon": "mail",
+    "backgroundColor": "#3f51b5",
+    "asteriskApp": "Voicemail",
+    "validConnections": ["application", "flowControl"],
+    "properties": [
+      {
+        "name": "mailbox",
+        "displayName": "Mailbox",
+        "type": "string",
+        "description": "Voicemail box (e.g., 123@default)",
+        "required": true
+      },
+      {
+        "name": "options",
+        "displayName": "Options",
+        "type": "string",
+        "description": "Voicemail options (e.g., u, b)",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "Set",
+    "category": "application",
+    "description": "Sets a variable",
+    "icon": "edit",
+    "backgroundColor": "#00bcd4",
+    "asteriskApp": "Set",
+    "validConnections": ["application", "flowControl"],
+    "properties": [
+      {
+        "name": "variable",
+        "displayName": "Variable",
+        "type": "string",
+        "description": "Variable name",
+        "required": true
+      },
+      {
+        "name": "value",
+        "displayName": "Value",
+        "type": "string",
+        "description": "Variable value",
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "Goto",
+    "category": "flowControl",
+    "description": "Jumps to another extension or priority",
+    "icon": "corner-down-right",
+    "backgroundColor": "#ff5722",
+    "asteriskApp": "Goto",
+    "validConnections": [],
+    "properties": [
+      {
+        "name": "context",
+        "displayName": "Context",
+        "type": "string",
+        "description": "Destination context (optional)",
+        "required": false
+      },
+      {
+        "name": "extension",
+        "displayName": "Extension",
+        "type": "string",
+        "description": "Destination extension",
+        "required": true
+      },
+      {
+        "name": "priority",
+        "displayName": "Priority",
+        "type": "string",
+        "description": "Destination priority",
+        "defaultValue": "1",
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "BackGround",
+    "category": "application",
+    "description": "Plays audio while waiting for DTMF input",
+    "icon": "music",
+    "backgroundColor": "#9c27b0",
+    "asteriskApp": "Background",
+    "validConnections": ["application", "flowControl"],
+    "properties": [
+      {
+        "name": "filename",
+        "displayName": "File Name",
+        "type": "string",
+        "description": "Audio file to play",
+        "required": true
+      },
+      {
+        "name": "options",
+        "displayName": "Options",
+        "type": "string",
+        "description": "Background options",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "WaitExten",
+    "category": "application",
+    "description": "Waits for DTMF input",
+    "icon": "clock",
+    "backgroundColor": "#ffc107",
+    "asteriskApp": "WaitExten",
+    "validConnections": ["application", "flowControl"],
+    "properties": [
+      {
+        "name": "timeout",
+        "displayName": "Timeout",
+        "type": "number",
+        "description": "Timeout in seconds",
+        "defaultValue": 5,
+        "required": false
+      },
+      {
+        "name": "options",
+        "displayName": "Options",
+        "type": "string",
+        "description": "Additional options",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "AGI",
+    "category": "application",
+    "description": "Executes an AGI script",
+    "icon": "code",
+    "backgroundColor": "#607d8b",
+    "asteriskApp": "AGI",
+    "validConnections": ["application", "flowControl"],
+    "properties": [
+      {
+        "name": "command",
+        "displayName": "Command",
+        "type": "string",
+        "description": "AGI script path and arguments",
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "IVR Menu",
+    "category": "flowControl",
+    "description": "Creates an IVR menu with multiple options",
+    "icon": "menu",
+    "backgroundColor": "#e91e63",
+    "validConnections": ["application", "flowControl"],
+    "properties": [
+      {
+        "name": "prompt",
+        "displayName": "Audio Prompt",
+        "type": "string",
+        "description": "Audio file to play for menu options",
+        "required": true
+      },
+      {
+        "name": "timeout",
+        "displayName": "Timeout",
+        "type": "number",
+        "description": "Timeout in seconds",
+        "defaultValue": 10,
+        "required": true
+      },
+      {
+        "name": "options",
+        "displayName": "Menu Options",
+        "type": "template",
+        "description": "DTMF options configuration",
+        "required": true,
+        "defaultValue": [
+          { "digit": "1", "label": "Option 1" },
+          { "digit": "2", "label": "Option 2" }
+        ]
+      },
+      {
+        "name": "invalidOption",
+        "displayName": "Invalid Option Prompt",
+        "type": "string",
+        "description": "Audio to play for invalid selection",
+        "required": false
+      },
+      {
+        "name": "maxRetries",
+        "displayName": "Max Retries",
+        "type": "number",
+        "description": "Maximum number of retries",
+        "defaultValue": 3,
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "TimeCondition",
+    "category": "flowControl",
+    "description": "Routes calls based on time and date",
+    "icon": "clock",
+    "backgroundColor": "#795548",
+    "validConnections": ["application", "flowControl"],
+    "properties": [
+      {
+        "name": "conditions",
+        "displayName": "Time Conditions",
+        "type": "template",
+        "description": "Time condition configuration",
+        "required": true,
+        "defaultValue": [
+          { 
+            "name": "Business Hours", 
+            "timeStart": "09:00", 
+            "timeEnd": "17:00", 
+            "daysOfWeek": ["mon", "tue", "wed", "thu", "fri"]
+          },
+          { 
+            "name": "After Hours", 
+            "timeStart": "00:00", 
+            "timeEnd": "23:59", 
+            "daysOfWeek": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+          }
+        ]
+      }
+    ]
+  }
+]

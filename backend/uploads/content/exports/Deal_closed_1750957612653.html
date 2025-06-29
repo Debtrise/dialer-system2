@@ -1,0 +1,140 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deal closed</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #000;
+        }
+        .canvas {
+            position: relative;
+            width: 1920px;
+            height: 1080px;
+            background-color: #43844a;
+            overflow: hidden;
+        }
+        .element {
+            position: absolute;
+        }
+        /* Enhanced text styles */
+        .text-element {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.5;
+        }
+        
+    /* Marquee animation */
+    @keyframes marquee {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-100%); }
+    }
+    .marquee-container {
+      overflow: hidden;
+    }
+    .marquee-content {
+      display: inline-block;
+      white-space: nowrap;
+    }
+    
+    /* Typewriter cursor */
+    .typewriter-cursor {
+      animation: blink 1s infinite;
+    }
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0; }
+    }
+  
+    </style>
+</head>
+<body>
+    <div class="canvas" id="main-canvas">
+        <div class="element animation-element" 
+                    data-element-id="2994214b-2e13-47ae-b554-7d7bd4d9945f"
+                    style="
+    position: absolute;
+    left: 76.28125px;
+    top: 247.46875px;
+    width: 800px;
+    height: 600px;
+  top: 0;left: 0;width: 100%;height: 100%;z-index: 100;overflow: hidden;position: fixed;pointer-events: none;">
+                    animation
+                  </div><div class="element text-element" 
+                    data-element-id="ebb4e7eb-90fe-47b8-bc78-e0dc22eb7c5c"
+                    style="
+    position: absolute;
+    left: 538.1524152986535px;
+    top: 262.97470372260364px;
+    width: 800px;
+    height: 120px;
+  color: #ffffff;font-size: 72px;text-align: center;font-weight: bold;z-index: 10;">
+                    🎉 Deal Closed! 🎉
+                  </div><div class="element text-element" 
+                    data-element-id="592708ce-1d47-4800-937b-449d67fa112b"
+                    style="
+    position: absolute;
+    left: 560px;
+    top: 399.4817743600117px;
+    width: 800px;
+    height: 80px;
+  color: #ffffff;font-size: 48px;text-align: center;z-index: 10;">
+                    Congratulations {rep_name}!
+                  </div><div class="element text-element" 
+                    data-element-id="d7bd2204-ebe2-4c0a-8159-27a8fa83c149"
+                    style="
+    position: absolute;
+    left: 560px;
+    top: 510px;
+    width: 800px;
+    height: 60px;
+  color: #ffffff;opacity: 0.9;font-size: 36px;text-align: center;z-index: 10;">
+                    ${deal_amount} - {company_name}
+                  </div>
+    </div>
+    <script>
+        
+    console.log('Project loaded with 4 elements');
+    
+    // Auto-refresh if specified
+    
+    
+    // Typewriter effect
+    document.querySelectorAll('.typewriter-text').forEach(element => {
+      const text = element.getAttribute('data-text');
+      const speed = parseInt(element.getAttribute('data-speed')) || 80;
+      const contentEl = element.querySelector('.typewriter-content');
+      if (contentEl && text) {
+        let i = 0;
+        function typeWriter() {
+          if (i < text.length) {
+            contentEl.textContent += text.charAt(i);
+            i++;
+            setTimeout(typeWriter, speed);
+          }
+        }
+        typeWriter();
+      }
+    });
+    
+    // Element interactions
+  
+    </script>
+</body>
+</html>

@@ -1,0 +1,130 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>e</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #000;
+        }
+        .canvas {
+            position: relative;
+            width: 1920px;
+            height: 1080px;
+            background-color: #688560;
+            overflow: hidden;
+        }
+        .element {
+            position: absolute;
+        }
+        /* Enhanced text styles */
+        .text-element {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.5;
+        }
+        
+    /* Marquee animation */
+    @keyframes marquee {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-100%); }
+    }
+    .marquee-container {
+      overflow: hidden;
+    }
+    .marquee-content {
+      display: inline-block;
+      white-space: nowrap;
+    }
+    
+    /* Typewriter cursor */
+    .typewriter-cursor {
+      animation: blink 1s infinite;
+    }
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0; }
+    }
+  
+    </style>
+</head>
+<body>
+    <div class="canvas" id="main-canvas">
+        <div class="element text-element" 
+                    data-element-id="b7d3cb26-29bb-469c-812b-3b322b0a8712"
+                    style="
+    position: absolute;
+    left: 564px;
+    top: 588px;
+    width: 800px;
+    height: 60px;
+  color: #ffffff;opacity: 0.9;font-size: 36px;text-align: center;z-index: 10;">
+                    ${deal_amount} - {company_name}
+                  </div><div class="element text-element" 
+                    data-element-id="e083fcb5-d62b-448b-946c-ecfc249431d2"
+                    style="
+    position: absolute;
+    left: 552px;
+    top: 652px;
+    width: 800px;
+    height: 80px;
+  color: #ffffff;font-size: 48px;text-align: center;z-index: 10;">
+                    Congratulations {rep_name}!
+                  </div><div class="element text-element" 
+                    data-element-id="1271c23a-dbe7-4154-9a72-f2de0f0aaa90"
+                    style="
+    position: absolute;
+    left: 550.6666666666666px;
+    top: 342.6666666666667px;
+    width: 800px;
+    height: 120px;
+  color: #ffffff;font-size: 72px;text-align: center;font-weight: bold;z-index: 10;">
+                    🎉 Deal Closed! 🎉
+                  </div>
+    </div>
+    <script>
+        
+    console.log('Project loaded with 4 elements');
+    
+    // Auto-refresh if specified
+    
+    
+    // Typewriter effect
+    document.querySelectorAll('.typewriter-text').forEach(element => {
+      const text = element.getAttribute('data-text');
+      const speed = parseInt(element.getAttribute('data-speed')) || 80;
+      const contentEl = element.querySelector('.typewriter-content');
+      if (contentEl && text) {
+        let i = 0;
+        function typeWriter() {
+          if (i < text.length) {
+            contentEl.textContent += text.charAt(i);
+            i++;
+            setTimeout(typeWriter, speed);
+          }
+        }
+        typeWriter();
+      }
+    });
+    
+    // Element interactions
+  
+    </script>
+</body>
+</html>

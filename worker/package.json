@@ -1,0 +1,28 @@
+{
+  "name": "dialer-system-worker",
+  "version": "1.0.0",
+  "description": "Worker service for the dialer system",
+  "main": "worker.js",
+  "scripts": {
+    "start": "node worker.js",
+    "dev": "nodemon worker.js"
+  },
+  "dependencies": {
+    "asterisk-ami-client": "^1.1.5",
+    "axios": "^1.6.0",
+    "csv-parser": "^3.2.0",
+    "dotenv": "^16.3.1",
+    "moment": "^2.29.4",
+    "moment-timezone": "^0.5.43",
+    "mongoose": "^7.6.3",
+    "node-cron": "^3.0.2",
+    "pg": "^8.15.6",
+    "pg-hstore": "^2.3.4",
+    "sequelize": "^6.37.7",
+    "twilio": "^5.5.2",
+    "xrequire": "^0.4.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

@@ -1,0 +1,19 @@
+--- reporting-service.js.orig
++++ reporting-service.js
+@@ -1060,7 +1060,7 @@
+     // Update dashboard stats method
+     async updateDashboardStats(tenantId) {
+         try {
+-            const tenant = await this.models.Tenant.findByPk(tenantId);
++            const tenant = await this.models.Tenant.findByPk(tenantId.toString());
+             if (!tenant) return;
+             
+             // Get active calls count
+@@ -1064,7 +1064,7 @@
+             const activeCalls = await this.models.CallLog.count({
+                 where: {
+-                    tenantId: tenant.id,
++                    tenantId: tenant.id.toString(),
+                     status: ['initiated', 'answered'],
+                     endTime: null
+                 }
