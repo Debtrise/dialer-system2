@@ -6,23 +6,16 @@ class SmsService {
    * @param {Object} tenant - The tenant object with SMS configuration
    * @param {Object} models - Object containing Sequelize models { SmsLog, Lead }
    */
-  constructor(tenant, models) {
+  constructor(tenant, models = {}) {
     this.tenant = tenant;
     this.models = models;
     this.twilioClient = null;
-    
-    if (tenant.smsConfig && tenant.smsConfig.twilioAccountSid && tenant.smsConfig.twilioAuthToken) {
-      this.twilioClient = twilio(
-        tenant.smsConfig.twilioAccountSid,
-        tenant.smsConfig.twilioAuthToken
-      );
-    }
-  }
-  constructor(tenant) {
-    this.tenant = tenant;
-    this.twilioClient = null;
-    
-    if (tenant.smsConfig && tenant.smsConfig.twilioAccountSid && tenant.smsConfig.twilioAuthToken) {
+
+    if (
+      tenant.smsConfig &&
+      tenant.smsConfig.twilioAccountSid &&
+      tenant.smsConfig.twilioAuthToken
+    ) {
       this.twilioClient = twilio(
         tenant.smsConfig.twilioAccountSid,
         tenant.smsConfig.twilioAuthToken
@@ -37,7 +30,7 @@ class SmsService {
     
     try {
       // Create SMS log entry
-      const smsLog = await SmsLog.create({
+      const smsLog = await this.models.SmsLog.create({
         tenantId: this.tenant.id.toString(),
         leadId: lead.id,
         from: this.tenant.smsConfig.twilioPhoneNumber,

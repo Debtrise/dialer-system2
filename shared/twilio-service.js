@@ -67,7 +67,7 @@ async sendSms(tenantId, options) {
       const fromNumber = from || await this.selectFromNumber(tenantId, to);
 
       // Create SMS record
-      const smsRecord = await this.models.SmsMessage.create({
+      smsRecord = await this.models.SmsMessage.create({
         tenantId,
         leadId,
         from: fromNumber,
@@ -535,7 +535,7 @@ async sendSms(tenantId, options) {
   async updateFromNumberUsage(phoneNumber) {
     await this.models.SmsPhoneNumber.update(
       {
-        usageCount: this.sequelize.literal('usage_count + 1'),
+        usageCount: this.models.sequelize.literal('usage_count + 1'),
         lastUsed: new Date()
       },
       {
@@ -690,7 +690,7 @@ async sendSms(tenantId, options) {
     // Update template usage count
     await this.models.Template.update(
       {
-        usageCount: this.sequelize.literal('usage_count + 1'),
+        usageCount: this.models.sequelize.literal('usage_count + 1'),
         lastUsed: new Date()
       },
       {
@@ -760,6 +760,13 @@ async sendSms(tenantId, options) {
       console.error('Error syncing Twilio numbers:', error);
       throw error;
     }
+  }
+
+  /**
+   * Invalidate cached client
+   */
+  invalidateClient(tenantId) {
+    this.clients.delete(tenantId);
   }
 }
 
