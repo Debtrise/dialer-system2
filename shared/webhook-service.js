@@ -602,15 +602,15 @@ class WebhookService {
     try {
       // Search for photo in Sales Reps folder
       const asset = await this.models.ContentAsset.findOne({
-        where: {
-          tenantId,
-          categories: {
-            [this.models.Sequelize.Op.contains]: ['Sales Reps']
-          },
-          metadata: {
-            [this.models.Sequelize.Op.jsonSupersetOf]: { repEmail: email }
-          },
-          processingStatus: 'completed'
+          where: {
+            tenantId,
+            categories: {
+              [Op.contains]: ['Sales Reps']
+            },
+            metadata: {
+              [Op.jsonSupersetOf]: { repEmail: email }
+            },
+            processingStatus: 'completed'
         },
         order: [['createdAt', 'DESC']]
       });
@@ -646,12 +646,12 @@ class WebhookService {
     try {
       // Look for fallback photo in tenant settings or designated asset
       const fallbackAsset = await this.models.ContentAsset.findOne({
-        where: {
-          tenantId,
-          metadata: {
-            [this.models.Sequelize.Op.jsonSupersetOf]: { isFallbackPhoto: true }
-          },
-          processingStatus: 'completed'
+          where: {
+            tenantId,
+            metadata: {
+              [Op.jsonSupersetOf]: { isFallbackPhoto: true }
+            },
+            processingStatus: 'completed'
         }
       });
 
