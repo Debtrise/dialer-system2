@@ -626,6 +626,54 @@ class MeeraService {
   }
 
   /**
+   * Get SMS conversation for a lead
+   */
+  async getConversation(tenantId, leadId, options = {}) {
+    const { page = 1, limit = 50 } = options;
+
+    try {
+      const conversation = await this.models.SmsConversation.findOne({
+        where: { tenantId, leadId }
+      });
+
+      if (!conversation) {
+        return {
+          messages: [],
+          totalCount: 0,
+          unreadCount: 0
+        };
+      }
+
+      const messages = await this.models.SmsMessage.findAll({
+        where: { tenantId, leadId },
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit),
+        offset: (parseInt(page) - 1) * parseInt(limit)
+      });
+
+      const count = await this.models.SmsMessage.count({
+        where: { tenantId, leadId }
+      });
+
+      if (options.markAsRead && conversation.unreadCount > 0) {
+        await conversation.update({ unreadCount: 0 });
+      }
+
+      return {
+        messages,
+        totalCount: count,
+        totalPages: Math.ceil(count / parseInt(limit)),
+        currentPage: parseInt(page),
+        unreadCount: conversation.unreadCount
+      };
+
+    } catch (error) {
+      console.error('Error getting SMS conversation:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Update lead SMS status
    */
   async updateLeadSmsStatus(leadId) {
