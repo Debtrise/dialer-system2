@@ -349,6 +349,34 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
     }
   });
 
+  // Get current fallback photo
+  router.get('/sales-rep-photos/fallback', authenticateToken, async (req, res) => {
+    try {
+      const asset = await ContentAsset.findOne({
+        where: {
+          tenantId: req.user.tenantId,
+          metadata: {
+            [sequelize.Sequelize.Op.jsonSupersetOf]: { isFallbackPhoto: true }
+          }
+        },
+        order: [['createdAt', 'DESC']]
+      });
+
+      if (!asset) {
+        return res.status(404).json({ error: 'Fallback photo not configured' });
+      }
+
+      res.json({
+        id: asset.id,
+        url: asset.publicUrl,
+        thumbnailUrl: asset.thumbnailUrl
+      });
+    } catch (error) {
+      console.error('Error retrieving fallback photo:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   // Get sales rep photo by email - FIXED query
   router.get('/sales-rep-photos/by-email/:email', authenticateToken, async (req, res) => {
     try {
