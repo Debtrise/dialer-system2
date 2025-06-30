@@ -29,6 +29,8 @@ console.log('✅ Static file serving enabled for /uploads');
 app.use('/uploads/content/thumbnails', express.static(path.join(__dirname, 'uploads/content/thumbnails')));
 app.use('/uploads/content/previews', express.static(path.join(__dirname, 'uploads/content/previews')));
 app.use('/uploads/content/assets', express.static(path.join(__dirname, 'uploads/content/assets')));
+app.use('/uploads/content/sales-rep-thumbnails', express.static(path.join(__dirname, 'uploads/content/sales-rep-thumbnails')));
+app.use('/uploads/content/sales-rep-previews', express.static(path.join(__dirname, 'uploads/content/sales-rep-previews')));
 console.log('✅ Content creation static file serving configured');
 
 
@@ -962,7 +964,7 @@ try {
   // Initialize template module
   try {
     const initTemplates = require('../shared/template-routes');
-    templateModels = initTemplates(app, sequelize, authenticateToken);
+    templateModels = initTemplates(app, sequelize, authenticateToken, contentService);
     console.log('Template module initialized successfully');
   } catch (error) {
     console.error('Error initializing template module:', error);

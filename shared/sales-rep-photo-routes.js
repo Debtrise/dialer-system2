@@ -101,6 +101,63 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
         metadata
       );
 
+      try {
+        const thumbName = path.basename(asset.thumbnailUrl || '');
+        const repThumbDir = contentService.directories.salesRepThumbnails;
+        const repPreviewDir = contentService.directories.salesRepPreviews;
+        await fs.mkdir(repThumbDir, { recursive: true });
+        await fs.mkdir(repPreviewDir, { recursive: true });
+
+        if (thumbName) {
+          const src = path.join(contentService.directories.thumbnails, thumbName);
+          const dest = path.join(repThumbDir, thumbName);
+          await fs.copyFile(src, dest);
+          asset.thumbnailUrl = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-thumbnails/${thumbName}`;
+        }
+
+        const newPreviews = {};
+        for (const [size, url] of Object.entries(asset.previewUrls || {})) {
+          const name = path.basename(url);
+          const src = path.join(contentService.directories.previews, name);
+          const dest = path.join(repPreviewDir, name);
+          await fs.copyFile(src, dest);
+          newPreviews[size] = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-previews/${name}`;
+        }
+
+        await asset.update({ thumbnailUrl: asset.thumbnailUrl, previewUrls: newPreviews });
+      } catch (thumbErr) {
+        console.warn('⚠️ Failed to persist sales rep thumbnails:', thumbErr.message);
+      }
+
+      // Persist thumbnails/previews in dedicated sales rep folders
+      try {
+        const thumbName = path.basename(asset.thumbnailUrl || '');
+        const repThumbDir = contentService.directories.salesRepThumbnails;
+        const repPreviewDir = contentService.directories.salesRepPreviews;
+        await fs.mkdir(repThumbDir, { recursive: true });
+        await fs.mkdir(repPreviewDir, { recursive: true });
+
+        if (thumbName) {
+          const src = path.join(contentService.directories.thumbnails, thumbName);
+          const dest = path.join(repThumbDir, thumbName);
+          await fs.copyFile(src, dest);
+          asset.thumbnailUrl = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-thumbnails/${thumbName}`;
+        }
+
+        const newPreviews = {};
+        for (const [size, url] of Object.entries(asset.previewUrls || {})) {
+          const name = path.basename(url);
+          const src = path.join(contentService.directories.previews, name);
+          const dest = path.join(repPreviewDir, name);
+          await fs.copyFile(src, dest);
+          newPreviews[size] = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-previews/${name}`;
+        }
+
+        await asset.update({ thumbnailUrl: asset.thumbnailUrl, previewUrls: newPreviews });
+      } catch (thumbErr) {
+        console.warn('⚠️ Failed to persist sales rep thumbnails:', thumbErr.message);
+      }
+
       console.log('✅ Asset uploaded with thumbnails:', {
         id: asset.id,
         thumbnailUrl: asset.thumbnailUrl,
@@ -173,6 +230,34 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
             file,
             metadata
           );
+
+          try {
+            const thumbName = path.basename(asset.thumbnailUrl || '');
+            const repThumbDir = contentService.directories.salesRepThumbnails;
+            const repPreviewDir = contentService.directories.salesRepPreviews;
+            await fs.mkdir(repThumbDir, { recursive: true });
+            await fs.mkdir(repPreviewDir, { recursive: true });
+
+            if (thumbName) {
+              const src = path.join(contentService.directories.thumbnails, thumbName);
+              const dest = path.join(repThumbDir, thumbName);
+              await fs.copyFile(src, dest);
+              asset.thumbnailUrl = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-thumbnails/${thumbName}`;
+            }
+
+            const newPreviews = {};
+            for (const [size, url] of Object.entries(asset.previewUrls || {})) {
+              const name = path.basename(url);
+              const src = path.join(contentService.directories.previews, name);
+              const dest = path.join(repPreviewDir, name);
+              await fs.copyFile(src, dest);
+              newPreviews[size] = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-previews/${name}`;
+            }
+
+            await asset.update({ thumbnailUrl: asset.thumbnailUrl, previewUrls: newPreviews });
+          } catch (thumbErr) {
+            console.warn('⚠️ Failed to persist sales rep thumbnails:', thumbErr.message);
+          }
 
           results.push({
             filename: file.originalname,

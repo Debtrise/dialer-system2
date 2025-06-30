@@ -37,8 +37,13 @@ class ContentCreationService {
       temp: path.join(this.uploadPath, 'temp'),
       optimized: path.join(this.uploadPath, 'optimized'),
       downloaded: path.join(this.uploadPath, 'downloaded'), // for downloaded external images
-      videos: path.join(this.uploadPath, 'videos') // generated announcement videos
+      videos: path.join(this.uploadPath, 'videos'), // generated announcement videos
+      salesRepThumbnails: path.join(this.uploadPath, 'sales-rep-thumbnails'),
+      salesRepPreviews: path.join(this.uploadPath, 'sales-rep-previews')
     };
+
+    // Ensure all directories exist on initialization
+    this.ensureUploadDirectories();
     
     // Element type categorization
     this.elementCategories = {
