@@ -94,6 +94,12 @@ module.exports = function(app, sequelize, authenticateToken, contentIntegration 
         Tenant: sequelize.models.Tenant,
         ContentAsset: contentModels?.ContentAsset || sequelize.models.ContentAsset,
         Sequelize: sequelize.Sequelize
+        ContentAsset: sequelize.models.ContentAsset,
+        OptisignsDisplay: sequelize.models.OptisignsDisplay,
+        OptisignsTakeover: sequelize.models.OptisignsTakeover,
+        Lead: sequelize.models.Lead,
+        Tenant: sequelize.models.Tenant,
+
       },
       journeyService,
       contentService,

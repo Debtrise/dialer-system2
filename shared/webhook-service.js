@@ -13,6 +13,9 @@ class WebhookService {
     this.journeyService = journeyService;
     this.contentService = contentService;
     this.optisignsService = optisignsService;
+
+    // Ensure metric recording helper is always bound correctly
+    this.recordAnnouncementMetrics = this.recordAnnouncementMetrics.bind(this);
     
     console.log('WebhookService initialized with services:', {
       models: !!models,
@@ -302,8 +305,10 @@ class WebhookService {
         : webhookEndpoint.dataValues?.tenantId);
 
     const announcementMetricData = {
+      tenantId: webhookEndpoint.tenantId,
       webhookEndpointId: webhookEndpoint.id,
       tenantId: tenantId,
+
       announcementStartTime: new Date(processingStartTime),
       contentProjectId: null,
       displayIds: [],
@@ -394,7 +399,11 @@ class WebhookService {
         console.log('✅ Created content project:', contentProject.id);
 
         // Inject variables into project elements (including photo)
-        await this.injectVariablesIntoProject(contentProject.id, extractedVariables.variables);
+        await this.injectVariablesIntoProject(
+          contentProject.id,
+          extractedVariables.variables,
+          webhookEndpoint.tenantId
+        );
         
       } catch (error) {
         console.error('❌ Failed to create content project:', error);
@@ -606,15 +615,15 @@ class WebhookService {
     try {
       // Search for photo in Sales Reps folder
       const asset = await this.models.ContentAsset.findOne({
-        where: {
-          tenantId,
-          categories: {
-            [this.models.Sequelize.Op.contains]: ['Sales Reps']
-          },
-          metadata: {
-            [this.models.Sequelize.Op.jsonSupersetOf]: { repEmail: email }
-          },
-          processingStatus: 'completed'
+          where: {
+            tenantId,
+            categories: {
+              [Op.contains]: ['Sales Reps']
+            },
+            metadata: {
+              [Op.jsonSupersetOf]: { repEmail: email }
+            },
+            processingStatus: 'completed'
         },
         order: [['createdAt', 'DESC']]
       });
@@ -650,12 +659,12 @@ class WebhookService {
     try {
       // Look for fallback photo in tenant settings or designated asset
       const fallbackAsset = await this.models.ContentAsset.findOne({
-        where: {
-          tenantId,
-          metadata: {
-            [this.models.Sequelize.Op.jsonSupersetOf]: { isFallbackPhoto: true }
-          },
-          processingStatus: 'completed'
+          where: {
+            tenantId,
+            metadata: {
+              [Op.jsonSupersetOf]: { isFallbackPhoto: true }
+            },
+            processingStatus: 'completed'
         }
       });
 
@@ -686,12 +695,12 @@ class WebhookService {
   /**
    * Inject variables into content project elements (ENHANCED FOR IMAGES)
    */
-  async injectVariablesIntoProject(projectId, variables) {
+  async injectVariablesIntoProject(projectId, variables, tenantId = null) {
     try {
       // Get project with elements
       const project = await this.contentService.getProjectWithElements(
         projectId,
-        null // We'll handle tenant validation in the service
+        tenantId // Pass through tenant for proper lookup
       );
       
       if (!project || !project.elements) {
