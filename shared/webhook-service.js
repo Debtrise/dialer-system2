@@ -623,17 +623,19 @@ class WebhookService {
     const normalizedEmail = email.toLowerCase();
     try {
       // Search for photo in Sales Reps folder
+      const sequelize = this.models.ContentAsset.sequelize;
       const asset = await this.models.ContentAsset.findOne({
-          where: {
-            tenantId,
-            categories: {
-              [Op.contains]: ['Sales Reps']
-            },
-            metadata: {
-              [Op.jsonSupersetOf]: { repEmail: normalizedEmail }
-            },
-            processingStatus: 'completed'
+        where: {
+          tenantId,
+          categories: {
+            [Op.contains]: ['Sales Reps']
+          },
+          processingStatus: 'completed',
+          [Op.and]: [
+            sequelize.literal(`metadata->>'repEmail' = :email`)
+          ]
         },
+        replacements: { email: normalizedEmail },
         order: [['createdAt', 'DESC']]
       });
 
