@@ -390,7 +390,11 @@ class WebhookService {
         console.log('✅ Created content project:', contentProject.id);
 
         // Inject variables into project elements (including photo)
-        await this.injectVariablesIntoProject(contentProject.id, extractedVariables.variables);
+        await this.injectVariablesIntoProject(
+          contentProject.id,
+          extractedVariables.variables,
+          webhookEndpoint.tenantId
+        );
         
       } catch (error) {
         console.error('❌ Failed to create content project:', error);
@@ -682,12 +686,12 @@ class WebhookService {
   /**
    * Inject variables into content project elements (ENHANCED FOR IMAGES)
    */
-  async injectVariablesIntoProject(projectId, variables) {
+  async injectVariablesIntoProject(projectId, variables, tenantId = null) {
     try {
       // Get project with elements
       const project = await this.contentService.getProjectWithElements(
         projectId,
-        null // We'll handle tenant validation in the service
+        tenantId // Pass through tenant for proper lookup
       );
       
       if (!project || !project.elements) {
