@@ -179,13 +179,38 @@ module.exports = function(app, sequelize, authenticateToken) {
   router.post('/sms/twilio/test', authenticateToken, async (req, res) => {
     try {
       const numbers = await twilioService.getTwilioNumbers(req.user.tenantId);
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         message: 'Twilio connection successful',
         numberCount: numbers.length
       });
     } catch (error) {
       console.error('Error testing Twilio connection:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // List synced Twilio numbers
+  router.get('/sms/twilio/numbers', authenticateToken, async (req, res) => {
+    try {
+      const numbers = await twilioModels.SmsPhoneNumber.findAll({
+        where: { tenantId: req.user.tenantId },
+        order: [['phoneNumber', 'ASC']]
+      });
+      res.json(numbers);
+    } catch (error) {
+      console.error('Error fetching Twilio numbers:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Sync numbers from Twilio account
+  router.post('/sms/twilio/numbers/sync', authenticateToken, async (req, res) => {
+    try {
+      const result = await twilioService.syncTwilioNumbers(req.user.tenantId);
+      res.json(result);
+    } catch (error) {
+      console.error('Error syncing Twilio numbers:', error);
       res.status(400).json({ error: error.message });
     }
   });
@@ -442,6 +467,29 @@ module.exports = function(app, sequelize, authenticateToken) {
       });
     } catch (error) {
       console.error('Error getting SMS messages:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get conversation for a lead (aggregates all providers)
+  router.get('/sms/conversations/:leadId', authenticateToken, async (req, res) => {
+    try {
+      const { page = 1, limit = 50, markAsRead } = req.query;
+      const options = {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        markAsRead: markAsRead === 'true'
+      };
+
+      const data = await twilioService.getConversation(
+        req.user.tenantId,
+        req.params.leadId,
+        options
+      );
+
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching SMS conversation:', error);
       res.status(400).json({ error: error.message });
     }
   });
