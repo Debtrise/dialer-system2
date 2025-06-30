@@ -61,14 +61,22 @@ module.exports = function(app, sequelize, authenticateToken, contentIntegration 
     }
     
     // Initialize enhanced webhook service with all required models and integrated services
-    const webhookService = new WebhookService({
-      WebhookEndpoint: webhookModels.WebhookEndpoint,
-      WebhookEvent: webhookModels.WebhookEvent,
-      LeadPauseState: webhookModels.LeadPauseState,
-      AnnouncementMetric: webhookModels.AnnouncementMetric,
-      Lead: sequelize.models.Lead,
-      Tenant: sequelize.models.Tenant
-    }, journeyService, contentService, optisignsService);
+    const webhookService = new WebhookService(
+      {
+        WebhookEndpoint: webhookModels.WebhookEndpoint,
+        WebhookEvent: webhookModels.WebhookEvent,
+        LeadPauseState: webhookModels.LeadPauseState,
+        AnnouncementMetric: webhookModels.AnnouncementMetric,
+        ContentAsset: sequelize.models.ContentAsset,
+        OptisignsDisplay: sequelize.models.OptisignsDisplay,
+        OptisignsTakeover: sequelize.models.OptisignsTakeover,
+        Lead: sequelize.models.Lead,
+        Tenant: sequelize.models.Tenant,
+      },
+      journeyService,
+      contentService,
+      optisignsService
+    );
 
     // Log service availability
     const serviceStatus = {
