@@ -7,6 +7,10 @@ const { v4: uuidv4 } = require('uuid');
 const fs = require('fs').promises;
 const path = require('path');
 
+// Small 1x1 pixel placeholder used when no fallback photo is configured
+const DEFAULT_FALLBACK_PHOTO =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
 class WebhookService {
   constructor(models, journeyService = null, contentService = null, optisignsService = null) {
     this.models = models;
@@ -580,10 +584,14 @@ class WebhookService {
           if (fallbackPhoto) {
             variables.rep_photo = fallbackPhoto.url;
             variables.rep_photo_id = fallbackPhoto.id;
-            console.log(`📷 Using fallback photo for ${repEmail}`);
+            if (fallbackPhoto.id) {
+              console.log(`📷 Using fallback photo for ${repEmail}`);
+            } else {
+              console.log(`📷 Using default placeholder photo for ${repEmail}`);
+            }
           } else {
             missing.push('rep_photo');
-            console.log(`❌ No photo found for ${repEmail} and no fallback configured`);
+            console.log(`❌ No photo found for ${repEmail}`);
           }
         }
       } catch (error) {
@@ -677,7 +685,12 @@ class WebhookService {
         };
       }
 
-      return null;
+      // Use a built-in placeholder when no fallback asset exists
+      return {
+        id: null,
+        url: DEFAULT_FALLBACK_PHOTO,
+        thumbnailUrl: DEFAULT_FALLBACK_PHOTO
+      };
     } catch (error) {
       console.error('Error fetching fallback photo:', error);
       return null;
