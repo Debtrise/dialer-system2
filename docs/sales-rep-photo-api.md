@@ -37,3 +37,11 @@ curl -X POST http://localhost:3001/api/webhooks/endpoint/YOUR_ENDPOINT_KEY \
     "client": {"company": "Acme Corp"}
   }'
 ```
+
+## Default Fallback Photo
+
+If no uploaded fallback is found, the webhook service can use a static image by
+setting the `DEFAULT_REP_PHOTO_URL` environment variable. This URL should point
+to a publicly accessible image (e.g. `https://example.com/default.png`). When
+defined, the service will automatically use this image whenever a rep photo and
+uploaded fallback are both missing.

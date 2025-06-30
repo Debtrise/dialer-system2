@@ -582,8 +582,16 @@ class WebhookService {
             variables.rep_photo_id = fallbackPhoto.id;
             console.log(`📷 Using fallback photo for ${repEmail}`);
           } else {
-            missing.push('rep_photo');
-            console.log(`❌ No photo found for ${repEmail} and no fallback configured`);
+            const defaultPhoto = process.env.DEFAULT_REP_PHOTO_URL;
+            if (defaultPhoto) {
+              variables.rep_photo = defaultPhoto;
+              console.log(
+                `⚠️ No photo found for ${repEmail}. Using DEFAULT_REP_PHOTO_URL`
+              );
+            } else {
+              missing.push('rep_photo');
+              console.log(`❌ No photo found for ${repEmail} and no fallback configured`);
+            }
           }
         }
       } catch (error) {
@@ -675,6 +683,11 @@ class WebhookService {
           url: fallbackAsset.publicUrl || fallbackAsset.url,
           thumbnailUrl: fallbackAsset.thumbnailUrl
         };
+      }
+
+      const defaultPhoto = process.env.DEFAULT_REP_PHOTO_URL;
+      if (defaultPhoto) {
+        return { id: null, url: defaultPhoto, thumbnailUrl: defaultPhoto };
       }
 
       return null;
