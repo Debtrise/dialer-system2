@@ -36,9 +36,20 @@ module.exports = function(app, sequelize, authenticateToken, contentIntegration 
 
     // Try to get Content Creator service if available
     let contentService = null;
+    let contentModels = null;
     try {
-      if (contentIntegration && contentIntegration.services && contentIntegration.services.contentService) {
-        contentService = contentIntegration.services.contentService;
+      if (contentIntegration) {
+        contentService =
+          contentIntegration.contentService ||
+          contentIntegration.services?.contentService ||
+          null;
+        contentModels =
+          contentIntegration.contentModels ||
+          contentIntegration.models ||
+          null;
+      }
+
+      if (contentService) {
         console.log('Content Creator service integrated for webhook announcements');
       } else {
         console.log('Content Creator service not available - announcement features will be limited');
@@ -50,8 +61,20 @@ module.exports = function(app, sequelize, authenticateToken, contentIntegration 
     // Try to get OptiSigns service if available
     let optisignsService = null;
     try {
-      if (optisignsIntegration && optisignsIntegration.services && optisignsIntegration.services.optisignsService) {
-        optisignsService = optisignsIntegration.services.optisignsService;
+      if (optisignsIntegration) {
+        optisignsService =
+          optisignsIntegration.optisignsService ||
+          optisignsIntegration.services?.optisignsService ||
+          null;
+      } else if (contentIntegration) {
+        // Support single options object containing optisigns keys
+        optisignsService =
+          contentIntegration.optisignsService ||
+          contentIntegration.services?.optisignsService ||
+          null;
+      }
+
+      if (optisignsService) {
         console.log('OptiSigns service integrated for webhook announcements');
       } else {
         console.log('OptiSigns service not available - screen takeover features will be limited');
@@ -61,14 +84,21 @@ module.exports = function(app, sequelize, authenticateToken, contentIntegration 
     }
     
     // Initialize enhanced webhook service with all required models and integrated services
-    const webhookService = new WebhookService({
-      WebhookEndpoint: webhookModels.WebhookEndpoint,
-      WebhookEvent: webhookModels.WebhookEvent,
-      LeadPauseState: webhookModels.LeadPauseState,
-      AnnouncementMetric: webhookModels.AnnouncementMetric,
-      Lead: sequelize.models.Lead,
-      Tenant: sequelize.models.Tenant
-    }, journeyService, contentService, optisignsService);
+    const webhookService = new WebhookService(
+      {
+        WebhookEndpoint: webhookModels.WebhookEndpoint,
+        WebhookEvent: webhookModels.WebhookEvent,
+        LeadPauseState: webhookModels.LeadPauseState,
+        AnnouncementMetric: webhookModels.AnnouncementMetric,
+        Lead: sequelize.models.Lead,
+        Tenant: sequelize.models.Tenant,
+        ContentAsset: contentModels?.ContentAsset || sequelize.models.ContentAsset,
+        Sequelize: sequelize.Sequelize
+      },
+      journeyService,
+      contentService,
+      optisignsService
+    );
 
     // Log service availability
     const serviceStatus = {

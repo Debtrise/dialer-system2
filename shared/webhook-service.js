@@ -295,8 +295,16 @@ class WebhookService {
    */
   async processAnnouncementWebhook(webhookEndpoint, payload) {
     const processingStartTime = Date.now();
+    const tenantId =
+      webhookEndpoint.tenantId ||
+      (typeof webhookEndpoint.get === 'function'
+        ? webhookEndpoint.get('tenantId')
+        : webhookEndpoint.dataValues?.tenantId);
+
     const announcementMetricData = {
       webhookEndpointId: webhookEndpoint.id,
+      tenantId: tenantId,
+      announcementStartTime: new Date(processingStartTime),
       contentProjectId: null,
       displayIds: [],
       successfulDisplays: 0,
@@ -314,9 +322,9 @@ class WebhookService {
         throw new Error('Announcement configuration is not enabled for this webhook');
       }
 
-      // Check required services
-      if (!this.contentService || !this.optisignsService) {
-        throw new Error('Content Creator and OptiSigns services are required for announcement webhooks');
+      // Check required services (OptiSigns is mandatory, content service optional)
+      if (!this.optisignsService) {
+        throw new Error('OptiSigns service is required for announcement webhooks');
       }
 
       const announcementConfig = webhookEndpoint.announcementConfig;
@@ -491,6 +499,13 @@ class WebhookService {
       }
       
       // Step 6: Record metrics
+      announcementMetricData.announcementEndTime = new Date();
+      announcementMetricData.processingTime = Date.now() - processingStartTime;
+      announcementMetricData.totalDuration = Math.round(
+        (announcementMetricData.announcementEndTime -
+          announcementMetricData.announcementStartTime) /
+          1000
+      );
       await this.recordAnnouncementMetrics(announcementMetricData);
       
       return {
@@ -514,6 +529,13 @@ class WebhookService {
         stage: 'general',
         error: error.message
       });
+      announcementMetricData.announcementEndTime = new Date();
+      announcementMetricData.processingTime = Date.now() - processingStartTime;
+      announcementMetricData.totalDuration = Math.round(
+        (announcementMetricData.announcementEndTime -
+          announcementMetricData.announcementStartTime) /
+          1000
+      );
       await this.recordAnnouncementMetrics(announcementMetricData);
       
       throw error;
@@ -1089,6 +1111,17 @@ class WebhookService {
     } catch (error) {
       console.error('Error getting webhook events:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Record announcement metrics
+   */
+  async recordAnnouncementMetrics(metricData) {
+    try {
+      await this.models.AnnouncementMetric.create(metricData);
+    } catch (error) {
+      console.error('Error recording announcement metrics:', error);
     }
   }
 
