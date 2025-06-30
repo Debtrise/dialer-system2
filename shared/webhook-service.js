@@ -302,9 +302,17 @@ class WebhookService {
    */
   async processAnnouncementWebhook(webhookEndpoint, payload) {
     const processingStartTime = Date.now();
+    const tenantId =
+      webhookEndpoint.tenantId ||
+      (typeof webhookEndpoint.get === 'function'
+        ? webhookEndpoint.get('tenantId')
+        : webhookEndpoint.dataValues?.tenantId);
+
     const announcementMetricData = {
       tenantId: webhookEndpoint.tenantId,
       webhookEndpointId: webhookEndpoint.id,
+      tenantId: tenantId,
+
       announcementStartTime: new Date(processingStartTime),
       contentProjectId: null,
       displayIds: [],
@@ -323,9 +331,9 @@ class WebhookService {
         throw new Error('Announcement configuration is not enabled for this webhook');
       }
 
-      // Check required services
-      if (!this.contentService || !this.optisignsService) {
-        throw new Error('Content Creator and OptiSigns services are required for announcement webhooks');
+      // Check required services (OptiSigns is mandatory, content service optional)
+      if (!this.optisignsService) {
+        throw new Error('OptiSigns service is required for announcement webhooks');
       }
 
       const announcementConfig = webhookEndpoint.announcementConfig;
