@@ -13,6 +13,9 @@ class WebhookService {
     this.journeyService = journeyService;
     this.contentService = contentService;
     this.optisignsService = optisignsService;
+
+    // Ensure metric recording helper is always bound correctly
+    this.recordAnnouncementMetrics = this.recordAnnouncementMetrics.bind(this);
     
     console.log('WebhookService initialized with services:', {
       models: !!models,
