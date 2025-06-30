@@ -48,7 +48,7 @@ class ContentCreationService {
     // Element type categorization
     this.elementCategories = {
       'Text': ['text', 'marquee_text', 'typewriter_text', 'countdown_text', 'gradient_text', 'outline_text', 'shadow_text'],
-      'Media': ['image', 'standard_photo', 'video', 'audio', 'image_carousel', 'image_gallery', 'slideshow', 'video_playlist', 'audio_playlist'],
+      'Media': ['image', 'sales_rep_photo', 'standard_photo', 'video', 'audio', 'image_carousel', 'image_gallery', 'slideshow', 'video_playlist', 'audio_playlist'],
       'Interactive': ['button', 'slider', 'toggle', 'dropdown', 'tabs', 'accordion', 'modal', 'tooltip', 'hotspot', 'image_map'],
       'Forms': ['input_field', 'textarea', 'checkbox', 'radio_button', 'select_dropdown', 'file_upload', 'date_picker', 'color_picker'],
       'Layout': ['container', 'grid', 'flexbox', 'divider', 'spacer', 'columns', 'section', 'header', 'footer']
@@ -204,7 +204,7 @@ async processProjectImagesForExport(project) {
     let processedCount = 0;
     
     for (const element of elements) {
-      if (element.elementType === 'image' || element.elementType === 'standard_photo') {
+      if (element.elementType === 'image' || element.elementType === 'standard_photo' || element.elementType === 'sales_rep_photo') {
         const imageUrl = element.properties?.imageUrl || 
                         element.properties?.src || 
                         element.properties?.url;
@@ -671,7 +671,7 @@ async getTemplate(templateId, tenantId) {
       }
 
       // NEW: Download external images immediately when creating image elements
-      if ((elementData.elementType === 'image' || elementData.elementType === 'standard_photo') && elementData.properties) {
+      if ((elementData.elementType === 'image' || elementData.elementType === 'standard_photo' || elementData.elementType === 'sales_rep_photo') && elementData.properties) {
         const imageUrl = elementData.properties.imageUrl || 
                         elementData.properties.src || 
                         elementData.properties.url;
@@ -751,7 +751,7 @@ async getTemplate(templateId, tenantId) {
       }
 
       // NEW: Download external images when updating image elements
-      if ((element.elementType === 'image' || element.elementType === 'standard_photo') && updateData.properties) {
+      if ((element.elementType === 'image' || element.elementType === 'standard_photo' || element.elementType === 'sales_rep_photo') && updateData.properties) {
         const imageUrl = updateData.properties.imageUrl || 
                         updateData.properties.src || 
                         updateData.properties.url;
@@ -1819,6 +1819,7 @@ async generateElementHTML(element, options = {}) {
       
     case 'image':
     case 'standard_photo':
+    case 'sales_rep_photo':
       // NEW: Use base64 embedded images - no external URLs at all
       let imageUrl = properties.src || properties.url || properties.imageUrl || properties.assetId;
       

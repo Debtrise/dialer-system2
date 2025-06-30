@@ -330,7 +330,7 @@ elementType: {
     'gradient_text', 'outline_text', 'shadow_text',
     
     // Media Elements
-    'image', 'standard_photo', 'video', 'audio', 'image_carousel', 'image_gallery', 
+    'image', 'sales_rep_photo', 'standard_photo', 'video', 'audio', 'image_carousel', 'image_gallery',
     'slideshow', 'video_playlist', 'audio_playlist',
     
     // Interactive Elements
