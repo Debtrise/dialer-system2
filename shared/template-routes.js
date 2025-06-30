@@ -2,7 +2,7 @@ const express = require('express');
 const { Op } = require('sequelize');
 const TemplateService = require('./template-service');
 
-module.exports = function(app, sequelize, authenticateToken) {
+module.exports = function(app, sequelize, authenticateToken, contentService = null) {
   const router = express.Router();
   
   // Initialize models
@@ -485,6 +485,21 @@ The Knittt Team`,
       res.json(result);
     } catch (error) {
       console.error('Error listing templates:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Combined list of communication and content templates
+  router.get('/templates/combined', authenticateToken, async (req, res) => {
+    try {
+      const communication = await templateService.listTemplates(req.user.tenantId, req.query);
+      let content = { templates: [], pagination: {} };
+      if (contentService && contentService.getTemplates) {
+        content = await contentService.getTemplates(req.user.tenantId, req.query);
+      }
+      res.json({ communication, content });
+    } catch (error) {
+      console.error('Error listing combined templates:', error);
       res.status(400).json({ error: error.message });
     }
   });
