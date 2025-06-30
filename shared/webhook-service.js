@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { Op } = require('sequelize');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs').promises;
+const path = require('path');
 
 class WebhookService {
   constructor(models, journeyService = null, contentService = null, optisignsService = null) {
@@ -597,6 +598,15 @@ class WebhookService {
       });
 
       if (asset) {
+        // Ensure the photo has a persistent public URL
+        if (!asset.publicUrl && asset.filePath) {
+          const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
+          const fileName = path.basename(asset.filePath);
+          const publicUrl = `${baseUrl}/uploads/content/assets/${fileName}`;
+          await asset.update({ publicUrl });
+          asset.publicUrl = publicUrl;
+        }
+
         return {
           id: asset.id,
           url: asset.publicUrl || asset.url,
@@ -628,6 +638,15 @@ class WebhookService {
       });
 
       if (fallbackAsset) {
+        // Ensure fallback photo has a persistent public URL
+        if (!fallbackAsset.publicUrl && fallbackAsset.filePath) {
+          const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
+          const fileName = path.basename(fallbackAsset.filePath);
+          const publicUrl = `${baseUrl}/uploads/content/assets/${fileName}`;
+          await fallbackAsset.update({ publicUrl });
+          fallbackAsset.publicUrl = publicUrl;
+        }
+
         return {
           id: fallbackAsset.id,
           url: fallbackAsset.publicUrl || fallbackAsset.url,
