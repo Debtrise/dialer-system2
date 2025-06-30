@@ -91,9 +91,16 @@ module.exports = (sequelize) => {
       defaultValue: 0
     },
     actionType: {
-      type: DataTypes.ENUM('call', 'sms', 'email', 'status_change', 'tag_update', 'webhook', 
-                           'wait_for_event', 'conditional_branch', 'lead_assignment', 
-                           'data_update', 'journey_transfer', 'delay'),
+      // Supported actions currently implemented by JourneyService
+      type: DataTypes.ENUM(
+        'call',
+        'sms',
+        'email',
+        'status_change',
+        'tag_update',
+        'webhook',
+        'delay'
+      ),
       allowNull: false
     },
     actionConfig: {
