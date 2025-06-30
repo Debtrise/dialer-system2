@@ -1241,6 +1241,27 @@ async function initializeElementLibrary(contentModels) {
           display: 'block'
         }
       },
+      {
+        name: 'Sales Rep Photo',
+        description: 'Photo of the sales rep pulled from uploaded assets',
+        elementType: 'sales_rep_photo',
+        category: 'Media',
+        subcategory: 'Dynamic',
+        isPublic: true,
+        difficulty: 'beginner',
+        tags: ['sales', 'rep', 'photo'],
+        defaultProperties: {
+          src: '{rep_photo}',
+          fit: 'cover',
+          borderRadius: '50%'
+        },
+        defaultStyles: {
+          width: '400px',
+          height: '400px',
+          borderRadius: '50%',
+          objectFit: 'cover'
+        }
+      },
       
       {
         name: 'Image Carousel',

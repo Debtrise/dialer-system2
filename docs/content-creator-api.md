@@ -46,6 +46,9 @@ Upload and manage assets used by elements.
 | `POST` | `/api/content/assets/upload` | Upload a new asset file. |
 | `DELETE` | `/api/content/assets/:assetId` | Remove an asset. |
 
+### Sales Rep Photo Element
+Templates can include an element with `elementType: "sales_rep_photo"`. When a project is generated from a webhook, the system automatically fills the element's `src` with the sales representative's photo based on the `{rep_photo}` variable.
+
 ## Variables and Exporting
 
 | Method | Path | Description |

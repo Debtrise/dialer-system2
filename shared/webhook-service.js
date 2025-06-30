@@ -671,8 +671,8 @@ class WebhookService {
             }
           }
 
-          // Special handling for image elements
-          if (element.elementType === 'image' && element.properties.src) {
+          // Special handling for image or sales rep photo elements
+          if ((element.elementType === 'image' || element.elementType === 'sales_rep_photo') && element.properties.src) {
             // Check if src contains a variable placeholder for photo
             if (element.properties.src.includes('{rep_photo}') && variables.rep_photo) {
               updatedProperties.src = variables.rep_photo;

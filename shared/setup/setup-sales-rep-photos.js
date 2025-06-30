@@ -141,7 +141,7 @@ const setupSalesRepPhotoFeature = async (sequelize, contentService) => {
             ]
           },
           salesRepPhoto: {
-            elementType: "image",
+            elementType: "sales_rep_photo",
             name: "Sales Rep Photo",
             position: { x: 720, y: 210, z: 6 },
             size: { width: 480, height: 480 },
