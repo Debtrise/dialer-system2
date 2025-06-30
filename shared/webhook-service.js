@@ -604,6 +604,7 @@ class WebhookService {
    * Get sales rep photo from content assets
    */
   async getSalesRepPhoto(tenantId, email) {
+    const normalizedEmail = email.toLowerCase();
     try {
       // Search for photo in Sales Reps folder
       const asset = await this.models.ContentAsset.findOne({
@@ -613,7 +614,7 @@ class WebhookService {
               [Op.contains]: ['Sales Reps']
             },
             metadata: {
-              [Op.jsonSupersetOf]: { repEmail: email }
+              [Op.jsonSupersetOf]: { repEmail: normalizedEmail }
             },
             processingStatus: 'completed'
         },
