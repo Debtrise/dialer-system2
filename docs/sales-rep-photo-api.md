@@ -6,6 +6,7 @@ These endpoints let you upload and manage sales rep photos used in announcement 
 | ------ | ---- | ----------- |
 | `POST` | `/sales-rep-photos/upload` | Upload a photo for a single sales rep. Form fields: `photo`, `repEmail`, optional `repName`. |
 | `POST` | `/sales-rep-photos/bulk-upload` | Bulk upload multiple photos. Accepts `photos` files array and `mappings` JSON describing `{filename,email,name}`. |
+| `POST` | `/sales-rep-photos/bulk-csv` | Upload a CSV of reps with `name`, `email` and `photoUrl` columns to create users and fetch their photos. |
 | `POST` | `/sales-rep-photos/fallback` | Set or replace the default fallback photo shown when a rep photo is missing. |
 | `GET` | `/sales-rep-photos/fallback` | Retrieve the current fallback photo. Returns 404 if not configured. |
 | `GET` | `/sales-rep-photos/by-email/:email` | Fetch a photo asset by rep email address. |

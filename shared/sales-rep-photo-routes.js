@@ -5,6 +5,10 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
+const { Readable } = require('stream');
+const csv = require('csv-parser');
+const axios = require('axios');
+const bcrypt = require('bcrypt');
 
 // Configure multer for photo uploads - FIXED to use memoryStorage
 const upload = multer({
@@ -286,6 +290,161 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
 
     } catch (error) {
       console.error('Error in bulk upload:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Bulk create sales reps from CSV with photo download
+  router.post('/sales-rep-photos/bulk-csv', authenticateToken, upload.single('csv'), async (req, res) => {
+    try {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied. Admin role required.' });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'CSV file is required' });
+      }
+
+      const User = sequelize.models.User;
+      const rows = [];
+      await new Promise((resolve, reject) => {
+        Readable.from(req.file.buffer)
+          .pipe(csv())
+          .on('data', data => rows.push(data))
+          .on('end', resolve)
+          .on('error', reject);
+      });
+
+      const results = [];
+      const errors = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const rowNumber = i + 2;
+
+        const name = (row.name || row.Name || row.repName || '').toString().trim();
+        const email = (row.email || row.Email || row.repEmail || '').toString().trim();
+        const photoUrl = (row.photo || row.photoUrl || row.photo_url || row.Photo || '').toString().trim();
+
+        if (!email) {
+          errors.push({ row: rowNumber, error: 'Missing email' });
+          continue;
+        }
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          errors.push({ row: rowNumber, email, error: 'Invalid email' });
+          continue;
+        }
+
+        const existing = await User.findOne({ where: { email, tenantId: req.user.tenantId } });
+        if (existing) {
+          errors.push({ row: rowNumber, email, error: 'User already exists' });
+          continue;
+        }
+
+        let usernameBase = email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '');
+        if (usernameBase.length === 0) usernameBase = 'user';
+        let username = usernameBase;
+        let counter = 1;
+        while (await User.findOne({ where: { username } })) {
+          username = `${usernameBase}${counter++}`;
+        }
+
+        const passwordPlain = Math.random().toString(36).slice(-8);
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(passwordPlain, salt);
+
+        let firstName = '';
+        let lastName = '';
+        if (name) {
+          const parts = name.split(' ');
+          firstName = parts.shift();
+          lastName = parts.join(' ');
+        }
+
+        const user = await User.create({
+          username,
+          password: hashedPassword,
+          email,
+          tenantId: req.user.tenantId,
+          role: 'agent',
+          firstName,
+          lastName,
+          isActive: true,
+          createdBy: req.user.id
+        });
+
+        let assetInfo = null;
+        if (photoUrl) {
+          try {
+            const response = await axios.get(photoUrl, { responseType: 'arraybuffer', timeout: 15000 });
+            const file = {
+              buffer: Buffer.from(response.data),
+              originalname: path.basename(photoUrl.split('?')[0] || 'photo.jpg'),
+              mimetype: response.headers['content-type'] || 'image/jpeg',
+              size: response.data.length
+            };
+            const metadata = {
+              name: `Sales Rep Photo - ${name || email}`,
+              tags: ['sales-rep', 'profile', 'photo'],
+              categories: ['Sales Reps'],
+              metadata: {
+                repEmail: email,
+                repName: name || null,
+                uploadedBy: req.user.email || req.user.username,
+                originalUrl: photoUrl,
+                uploadedAt: new Date().toISOString()
+              }
+            };
+            const asset = await contentService.uploadAsset(
+              req.user.tenantId,
+              req.user.id,
+              file,
+              metadata
+            );
+
+            try {
+              const thumbName = path.basename(asset.thumbnailUrl || '');
+              const repThumbDir = contentService.directories.salesRepThumbnails;
+              const repPreviewDir = contentService.directories.salesRepPreviews;
+              await fs.mkdir(repThumbDir, { recursive: true });
+              await fs.mkdir(repPreviewDir, { recursive: true });
+
+              if (thumbName) {
+                const src = path.join(contentService.directories.thumbnails, thumbName);
+                const dest = path.join(repThumbDir, thumbName);
+                await fs.copyFile(src, dest);
+                asset.thumbnailUrl = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-thumbnails/${thumbName}`;
+              }
+
+              const newPreviews = {};
+              for (const [size, url] of Object.entries(asset.previewUrls || {})) {
+                const namePart = path.basename(url);
+                const src = path.join(contentService.directories.previews, namePart);
+                const dest = path.join(repPreviewDir, namePart);
+                await fs.copyFile(src, dest);
+                newPreviews[size] = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-previews/${namePart}`;
+              }
+
+              await asset.update({ thumbnailUrl: asset.thumbnailUrl, previewUrls: newPreviews });
+            } catch (thumbErr) {
+              console.warn('⚠️ Failed to persist sales rep thumbnails:', thumbErr.message);
+            }
+
+            assetInfo = { id: asset.id, url: asset.publicUrl, thumbnailUrl: asset.thumbnailUrl };
+          } catch (err) {
+            errors.push({ row: rowNumber, email, error: `Photo download failed: ${err.message}` });
+          }
+        }
+
+        results.push({ row: rowNumber, email, username, password: passwordPlain, userId: user.id, asset: assetInfo });
+      }
+
+      res.json({ created: results.length, failed: errors.length, results, errors });
+
+    } catch (error) {
+      console.error('Error in CSV bulk upload:', error);
       res.status(400).json({ error: error.message });
     }
   });
