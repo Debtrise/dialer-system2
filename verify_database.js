@@ -87,6 +87,42 @@ const Tenant = sequelize.define('Tenant', {
   timestamps: true
 });
 
+// Billing models
+const Plan = sequelize.define('Plan', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  name: { type: DataTypes.STRING, allowNull: false },
+  price: { type: DataTypes.DECIMAL(10,2), allowNull: false },
+  description: { type: DataTypes.TEXT },
+  metadata: { type: DataTypes.JSONB }
+}, { tableName: 'Plans', timestamps: true });
+
+const Subscription = sequelize.define('Subscription', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  tenantId: { type: DataTypes.STRING, allowNull: false },
+  planId: { type: DataTypes.UUID, allowNull: false },
+  paymentMethodId: { type: DataTypes.UUID },
+  status: { type: DataTypes.ENUM('active','canceled','trial'), defaultValue: 'active' },
+  startDate: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+  endDate: { type: DataTypes.DATE }
+}, { tableName: 'Subscriptions', timestamps: true });
+
+const PaymentMethod = sequelize.define('PaymentMethod', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  tenantId: { type: DataTypes.STRING, allowNull: false },
+  type: { type: DataTypes.STRING, allowNull: false },
+  details: { type: DataTypes.JSONB },
+  isDefault: { type: DataTypes.BOOLEAN, defaultValue: false }
+}, { tableName: 'PaymentMethods', timestamps: true });
+
+const Transaction = sequelize.define('Transaction', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  tenantId: { type: DataTypes.STRING, allowNull: false },
+  subscriptionId: { type: DataTypes.UUID, allowNull: false },
+  amount: { type: DataTypes.DECIMAL(10,2), allowNull: false },
+  status: { type: DataTypes.ENUM('pending','paid','failed'), defaultValue: 'pending' },
+  details: { type: DataTypes.JSONB }
+}, { tableName: 'Transactions', timestamps: true });
+
 async function verifyAndFixDatabase() {
   try {
     console.log('🔍 Checking database connection...');
