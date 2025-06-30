@@ -239,6 +239,56 @@ async processProjectImagesForExport(project) {
   }
 }
 
+/**
+ * Process all video elements and embed small videos as base64
+ */
+async processProjectVideosForExport(project, maxSizeMB = 5) {
+  try {
+    const elements = project.elements || [];
+    for (const element of elements) {
+      if (element.elementType === 'video') {
+        const videoUrl = element.properties?.videoUrl || element.properties?.src || element.properties?.url;
+        if (videoUrl) {
+          const base64 = await this.videoToBase64(videoUrl, maxSizeMB);
+          if (base64) {
+            element.properties.src = base64;
+            element.properties.videoUrl = base64;
+            element.properties.url = base64;
+          }
+        }
+      }
+    }
+    return project;
+  } catch (error) {
+    console.error('❌ Error processing project videos:', error);
+    return project;
+  }
+}
+
+async videoToBase64(videoPath, maxSizeMB = 5) {
+  try {
+    let data;
+    if (videoPath.startsWith('http://') || videoPath.startsWith('https://')) {
+      const response = await axios.get(videoPath, { responseType: 'arraybuffer', timeout: 15000 });
+      data = Buffer.from(response.data);
+    } else {
+      const fsSync = require('fs');
+      if (!fsSync.existsSync(videoPath)) return null;
+      data = await fs.readFile(videoPath);
+    }
+    if (data.length > maxSizeMB * 1024 * 1024) {
+      console.warn(`⚠️ Video too large to embed (${(data.length/1024/1024).toFixed(2)}MB)`);
+      return null;
+    }
+    const ext = path.extname(videoPath).replace('.', '') || 'mp4';
+    const mime = `video/${ext}`;
+    return `data:${mime};base64,${data.toString('base64')}`;
+  } catch (err) {
+    console.warn('⚠️ Failed converting video to base64:', err.message);
+    return null;
+  }
+}
+
 // Helper method to check if URL is external
 isExternalUrl(url) {
   if (!url || typeof url !== 'string') return false;
@@ -1536,6 +1586,8 @@ async generateProjectHTML(project, options = {}) {
     
     // STEP 1: Process all images to base64 for self-contained export
     const processedProject = await this.processProjectImagesForExport(JSON.parse(JSON.stringify(project)));
+    // STEP 2: Process videos (embed small ones)
+    await this.processProjectVideosForExport(processedProject);
     
     const canvasSize = processedProject.canvasSize || { width: 1920, height: 1080 };
     const elements = processedProject.elements || [];
@@ -1544,6 +1596,13 @@ async generateProjectHTML(project, options = {}) {
     // Extract all fonts used in the project
     const fontsUsed = this.extractFontsFromProject(processedProject);
     const fontImports = this.generateFontImports(fontsUsed);
+
+    let libraryScripts = '';
+    if (elements.some(el => el.elementType === 'confetti')) {
+      const confettiPath = path.join(__dirname, 'embedded-scripts', 'confetti.browser.min.js');
+      const confettiLib = await fs.readFile(confettiPath, 'utf8');
+      libraryScripts += `<script>${confettiLib}</script>`;
+    }
     
     console.log('🔤 Fonts to import:', fontsUsed);
 
@@ -1576,6 +1635,7 @@ async generateProjectHTML(project, options = {}) {
     
     <!-- Font Imports -->
     ${fontImports}
+    ${libraryScripts}
     
     <style>
         * {
@@ -1806,12 +1866,16 @@ async generateElementHTML(element, options = {}) {
         shapeStyles += `border-radius: ${properties.borderRadius || '8px'}; `;
       }
       
-      content = `<div class="element shape-element ${shape}" 
+      content = `<div class="element shape-element ${shape}"
                     data-element-id="${elementId}"
                     style="${shapeStyles}">
                   </div>`;
       break;
-      
+
+    case 'confetti':
+      content = `<canvas class="element confetti-canvas" data-element-id="${elementId}" style="${inlineStyles}"></canvas>`;
+      break;
+
     case 'video':
       const videoUrl = properties.src || properties.url || properties.videoUrl;
       if (videoUrl) {
@@ -2129,6 +2193,9 @@ generateProjectJS(elements, options = {}) {
 
 
   for (const element of elements) {
+      if (element.elementType === 'confetti') {
+        js += `\n(function(){\n  const el = document.querySelector('[data-element-id="${element.id}"]');\n  if(el && window.confetti){\n    const cf = window.confetti.create(el,{resize:true,useWorker:true});\n    cf({particleCount:${element.properties?.particleCount || 100},spread:${element.properties?.spread || 70},origin:{y:${(element.properties?.origin?.y ?? 0.6)}},colors:${JSON.stringify(element.properties?.colors || [])}});\n  }\n})();\n`;
+      }
       if (element.interactions && element.interactions.length > 0) {
         js += `
           // Interactions for ${element.elementType} ${element.id}
