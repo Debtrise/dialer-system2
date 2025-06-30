@@ -71,6 +71,7 @@ let optisignsModels = null;
 let contentModels = null;
 let contentService = null;
 let optisignsService = null;
+let billingModels = null;
 
 const User = sequelize.define('User', {
   username: {
@@ -521,7 +522,7 @@ async function setupModelRelationships() {
   console.log('Setting up enhanced model relationships...');
   
   // Get all models
-  const { Lead, Tenant, CallLog, DID } = sequelize.models;
+  const { Lead, Tenant, CallLog, DID, Plan, Subscription, PaymentMethod } = sequelize.models;
   
   // Core Lead relationships
   if (Lead && CallLog) {
@@ -538,11 +539,25 @@ async function setupModelRelationships() {
       as: 'callLogs',
       onDelete: 'CASCADE'
     });
-    CallLog.belongsTo(Lead, { 
+    CallLog.belongsTo(Lead, {
       foreignKey: 'leadId',
       as: 'lead'
     });
     console.log('✅ Lead-CallLog relationships established');
+  }
+
+  // Billing relationships
+  if (Tenant && Subscription) {
+    Tenant.hasMany(Subscription, { foreignKey: 'tenantId' });
+    Subscription.belongsTo(Tenant, { foreignKey: 'tenantId' });
+  }
+  if (Plan && Subscription) {
+    Plan.hasMany(Subscription, { foreignKey: 'planId' });
+    Subscription.belongsTo(Plan, { foreignKey: 'planId' });
+  }
+  if (PaymentMethod && Subscription) {
+    PaymentMethod.hasMany(Subscription, { foreignKey: 'paymentMethodId' });
+    Subscription.belongsTo(PaymentMethod, { foreignKey: 'paymentMethodId' });
   }
 
 
@@ -986,6 +1001,17 @@ try {
     console.log('Report builder module initialized successfully');
   } catch (error) {
     console.error('Error initializing report builder module:', error);
+  }
+
+  // Initialize billing module
+  try {
+    const initBillingModels = require('../shared/billing-models');
+    billingModels = initBillingModels(sequelize);
+    const initBillingRoutes = require('../shared/billing-routes');
+    initBillingRoutes(app, sequelize, authenticateToken);
+    console.log('Billing module initialized successfully');
+  } catch (error) {
+    console.error('Error initializing billing module:', error);
   }
 
  try {
@@ -2494,6 +2520,7 @@ console.log(`
       - Report Builder ${reportBuilderModels ? '✓' : '✗'}
       - Recording Management ${recordingModels ? '✓' : '✗'}
       - Optisigns Integration ${optisignsModels ? '✓' : '✗'}
+      - Billing ${billingModels ? '✓' : '✗'}
     `);
   });
 
