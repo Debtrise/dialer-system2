@@ -253,7 +253,7 @@ module.exports = function(app, sequelize, authenticateToken, optisignsModels, op
       try {
         liveDisplay = await optisignsService.getDevice(
           tenantId,
-          display.optisignsDisplayId
+          display.uuid || display.optisignsDisplayId
         );
         await display.update({
           name: liveDisplay.deviceName || liveDisplay.name || display.name,
@@ -301,7 +301,7 @@ module.exports = function(app, sequelize, authenticateToken, optisignsModels, op
       // Update in OptiSigns
       const updatedDevice = await optisignsService.updateDevice(
         req.user.tenantId,
-        display.optisignsDisplayId,
+        display.uuid || display.optisignsDisplayId,
         updates
       );
 
@@ -347,7 +347,7 @@ module.exports = function(app, sequelize, authenticateToken, optisignsModels, op
 
       const updatedDevice = await optisignsService.addTags(
         req.user.tenantId,
-        display.optisignsDisplayId,
+        display.uuid || display.optisignsDisplayId,
         tags
       );
 
@@ -384,7 +384,7 @@ module.exports = function(app, sequelize, authenticateToken, optisignsModels, op
 
       const updatedDevice = await optisignsService.removeTags(
         req.user.tenantId,
-        display.optisignsDisplayId,
+        display.uuid || display.optisignsDisplayId,
         tags
       );
 

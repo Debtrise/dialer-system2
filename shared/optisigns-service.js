@@ -692,8 +692,9 @@ class OptisignsService {
       if (updates.location) deviceUpdates.location = updates.location;
       // Add other valid fields as needed
       
-      const device = await this.safeApiCall(() => 
-        client.devices.updateDevice(deviceId, deviceUpdates)
+      const apiDeviceId = deviceId;
+      const device = await this.safeApiCall(() =>
+        client.devices.updateDevice(apiDeviceId, deviceUpdates)
       );
       
       console.log('✅ Device updated successfully');
@@ -717,8 +718,9 @@ class OptisignsService {
       
       // The SDK might have a specific method for tags
       // If not, use updateDevice with tags field
-      const device = await this.safeApiCall(() => 
-        client.devices.updateDevice(deviceId, { tags })
+      const apiDeviceId = deviceId;
+      const device = await this.safeApiCall(() =>
+        client.devices.updateDevice(apiDeviceId, { tags })
       );
       
       return device;
@@ -944,12 +946,13 @@ class OptisignsService {
         }
       }
 
-      console.log(`🚀 Using SDK updateDevice: device=${device.optisignsDisplayId}, content=${optisignsContentId}, team=${teamId}`);
+      const apiDeviceId = device.uuid || device.optisignsDisplayId;
+      console.log(`🚀 Using SDK updateDevice: device=${apiDeviceId}, content=${optisignsContentId}, team=${teamId}`);
 
       // Use SDK updateDevice method to assign content
       const result = await this.safeApiCall(() => 
         client.devices.updateDevice(
-          device.optisignsDisplayId,
+          apiDeviceId,
           {
             currentAssetId: optisignsContentId,
             currentType: 'ASSET'
@@ -1068,9 +1071,10 @@ class OptisignsService {
       }
 
       // Clear by setting empty values using updateDevice
-      const result = await this.safeApiCall(() => 
+      const apiDeviceId = device.uuid || device.optisignsDisplayId;
+      const result = await this.safeApiCall(() =>
         client.devices.updateDevice(
-          device.optisignsDisplayId,
+          apiDeviceId,
           {
             currentAssetId: null,
             currentType: null
@@ -1141,11 +1145,12 @@ class OptisignsService {
       const client = await this.getClient(tenantId);
       
       try {
-        console.log(`🚀 Using SDK updateDevice for takeover: device=${device.optisignsDisplayId}, content=${resolvedContent.optisignsId}, team=${effectiveTeamId}`);
-        
-        await this.safeApiCall(() => 
+        const apiDeviceId = device.uuid || device.optisignsDisplayId;
+        console.log(`🚀 Using SDK updateDevice for takeover: device=${apiDeviceId}, content=${resolvedContent.optisignsId}, team=${effectiveTeamId}`);
+
+        await this.safeApiCall(() =>
           client.devices.updateDevice(
-            device.optisignsDisplayId,
+            apiDeviceId,
             {
               currentAssetId: resolvedContent.optisignsId,
               currentType: contentType
@@ -1485,9 +1490,10 @@ class OptisignsService {
           const teamId = config?.settings?.teamId || config?.settings?.defaultTeamId || null;
           
           // Use updateDevice to restore previous content
-          await this.safeApiCall(() => 
+          const apiDeviceId = device.uuid || device.optisignsDisplayId;
+          await this.safeApiCall(() =>
             client.devices.updateDevice(
-              device.optisignsDisplayId,
+              apiDeviceId,
               {
                 currentAssetId: takeover.previousContentId,
                 currentType: takeover.previousContentType || 'ASSET'
@@ -1635,8 +1641,9 @@ class OptisignsService {
       const client = await this.getClient(tenantId);
       
       // Get current device to find existing tags
-      const device = await this.safeApiCall(() => 
-        client.devices.getDeviceById(deviceId)
+      const apiDeviceId = deviceId;
+      const device = await this.safeApiCall(() =>
+        client.devices.getDeviceById(apiDeviceId)
       );
       
       // Remove specified tags
@@ -1644,8 +1651,8 @@ class OptisignsService {
       const updatedTags = currentTags.filter(tag => !tags.includes(tag));
       
       // Update device with new tags
-      const updatedDevice = await this.safeApiCall(() => 
-        client.devices.updateDevice(deviceId, { tags: updatedTags })
+      const updatedDevice = await this.safeApiCall(() =>
+        client.devices.updateDevice(apiDeviceId, { tags: updatedTags })
       );
       
       return updatedDevice;
