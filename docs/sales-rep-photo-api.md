@@ -16,6 +16,12 @@ When using the Content Creator, you can place a photo on the canvas by adding an
 | `POST` | `/sales-rep-photos/generate-video` | Produce a celebration video using the rep photo. Body fields: `repEmail`, optional `repName`, `dealAmount`, `companyName`. |
 | `DELETE` | `/sales-rep-photos/:id` | Delete a photo asset by ID. |
 
+### Fallback photo
+If a sales rep photo isn't found for the provided email, the webhook logs a
+message similar to `No photo found for someone@example.com and no fallback
+configured`. Upload a default image using the `/sales-rep-photos/fallback`
+endpoint so the system can display it whenever a rep photo is missing.
+
 ## Quick Test
 The setup script provides example commands for uploading a photo and triggering a webhook:
 
