@@ -36,8 +36,9 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
   router.post('/sales-rep-photos/upload', authenticateToken, upload.single('photo'), async (req, res) => {
     try {
       const { repEmail, repName } = req.body;
+      const normalizedEmail = repEmail.toLowerCase().trim();
       
-      console.log('📧 Received request:', { repEmail, repName, hasFile: !!req.file });
+      console.log('📧 Received request:', { repEmail: normalizedEmail, repName, hasFile: !!req.file });
       
       if (!repEmail) {
         return res.status(400).json({ error: 'Sales rep email is required' });
@@ -55,7 +56,7 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
       });
 
       // Check if photo already exists for this email
-      console.log('🔍 Checking for existing photo for email:', repEmail);
+      console.log('🔍 Checking for existing photo for email:', normalizedEmail);
       const existingAsset = await ContentAsset.findOne({
         where: {
           tenantId: req.user.tenantId,
@@ -66,7 +67,7 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
             sequelize.literal(`metadata->>'repEmail' = :repEmail`)
           ]
         },
-        replacements: { repEmail: repEmail }
+        replacements: { repEmail: normalizedEmail }
       });
 
       if (existingAsset && !req.body.replace) {
@@ -83,11 +84,11 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
 
       // Prepare metadata for ContentCreationService
       const metadata = {
-        name: `Sales Rep Photo - ${repName || repEmail}`,
+        name: `Sales Rep Photo - ${repName || normalizedEmail}`,
         tags: ['sales-rep', 'profile', 'photo'],
         categories: ['Sales Reps'],
         metadata: {
-          repEmail,
+          repEmail: normalizedEmail,
           repName: repName || null,
           uploadedBy: req.user.email || req.user.username,
           originalFilename: req.file.originalname,
@@ -215,11 +216,11 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
 
         try {
           const metadata = {
-            name: `Sales Rep Photo - ${mapping.name || mapping.email}`,
+            name: `Sales Rep Photo - ${mapping.name || mapping.email.toLowerCase()}`,
             tags: ['sales-rep', 'profile', 'photo'],
             categories: ['Sales Reps'],
             metadata: {
-              repEmail: mapping.email,
+              repEmail: mapping.email.toLowerCase(),
               repName: mapping.name || null,
               uploadedBy: req.user.email || req.user.username,
               originalFilename: file.originalname,
@@ -323,7 +324,7 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
         const rowNumber = i + 2;
 
         const name = (row.name || row.Name || row.repName || '').toString().trim();
-        const email = (row.email || row.Email || row.repEmail || '').toString().trim();
+        const email = (row.email || row.Email || row.repEmail || '').toString().trim().toLowerCase();
         const photoUrl = (row.photo || row.photoUrl || row.photo_url || row.Photo || '').toString().trim();
 
         if (!email) {
@@ -539,7 +540,8 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
   // Get sales rep photo by email - FIXED query
   router.get('/sales-rep-photos/by-email/:email', authenticateToken, async (req, res) => {
     try {
-      console.log('🔍 Looking for photo for email:', req.params.email);
+      const email = req.params.email.toLowerCase();
+      console.log('🔍 Looking for photo for email:', email);
       
       const asset = await ContentAsset.findOne({
         where: {
@@ -552,7 +554,7 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
             sequelize.literal(`metadata->>'repEmail' = :repEmail`)
           ]
         },
-        replacements: { repEmail: req.params.email }
+        replacements: { repEmail: email }
       });
 
       if (!asset) {
@@ -629,6 +631,7 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
   router.post('/sales-rep-photos/generate-video', authenticateToken, async (req, res) => {
     try {
       const { repEmail, repName, dealAmount, companyName } = req.body;
+      const normalizedEmail = repEmail.toLowerCase().trim();
 
       if (!repEmail) {
         return res.status(400).json({ error: 'repEmail is required' });
@@ -642,7 +645,7 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
           },
           [sequelize.Sequelize.Op.and]: [sequelize.literal(`metadata->>'repEmail' = :repEmail`)]
         },
-        replacements: { repEmail }
+        replacements: { repEmail: normalizedEmail }
       });
 
       if (!asset) {
