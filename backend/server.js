@@ -856,6 +856,7 @@ async function initializeModules() {
     const initOptisigns = require('../shared/optisigns-integration');
     const optisignsIntegration = initOptisigns(app, sequelize, authenticateToken);
     optisignsModels = optisignsIntegration.models;
+    optisignsService = optisignsIntegration.services?.optisignsService;
     console.log('Optisigns module initialized successfully');
   } catch (error) {
     console.error('Error initializing Optisigns module:', error);
@@ -931,14 +932,15 @@ try {
  try {
   console.log('Initializing Enhanced Webhook Integration module...');
   const initWebhooks = require('../shared/webhook-integration');
-  
-  // Pass the services as options
-  const webhookIntegration = initWebhooks(app, sequelize, authenticateToken, {
-    contentService: contentService,
-    contentModels: contentModels,
-    optisignsService: optisignsService,
-    optisignsModels: optisignsModels
-  });
+
+  // Pass the initialized service objects
+  const webhookIntegration = initWebhooks(
+    app,
+    sequelize,
+    authenticateToken,
+    { services: { contentService } },
+    { services: { optisignsService } }
+  );
   
   webhookModels = webhookIntegration.models;
   console.log('Enhanced Webhook Integration module initialized successfully with all services');
@@ -963,7 +965,13 @@ try {
 
   // Initialize the Webhook Integration module
   console.log('Initializing Webhook Integration module...');
-  const webhookIntegration = initWebhookIntegration(app, sequelize, authenticateToken);
+  const webhookIntegration = initWebhookIntegration(
+    app,
+    sequelize,
+    authenticateToken,
+    { services: { contentService } },
+    { services: { optisignsService } }
+  );
   console.log('Webhook Integration module initialized successfully');
 
   // Initialize Twilio module
@@ -1027,6 +1035,7 @@ try {
     const initOptisigns = require('../shared/optisigns-integration');
     const optisignsIntegration = initOptisigns(app, sequelize, authenticateToken);
     optisignsModels = optisignsIntegration.models;
+    optisignsService = optisignsIntegration.services?.optisignsService;
     console.log('Optisigns module initialized successfully');
   } catch (error) {
     console.error('Error initializing Optisigns module:', error);
@@ -2333,7 +2342,13 @@ cron.schedule('*/2 * * * *', async () => {
   try {
     if (webhookModels && webhookModels.WebhookService) {
       // Get webhook service instance (you'll need to make this accessible)
-      const webhookIntegration = initWebhookIntegration(app, sequelize, authenticateToken);
+      const webhookIntegration = initWebhookIntegration(
+        app,
+        sequelize,
+        authenticateToken,
+        { services: { contentService } },
+        { services: { optisignsService } }
+      );
       const webhookService = webhookIntegration.services.webhookService;
       
       const processedCount = await webhookService.processScheduledResumes();
@@ -2351,7 +2366,13 @@ cron.schedule('*/5 * * * *', async () => {
   try {
     if (webhookModels && webhookModels.WebhookService) {
       // Get webhook service instance
-      const webhookIntegration = initWebhookIntegration(app, sequelize, authenticateToken);
+      const webhookIntegration = initWebhookIntegration(
+        app,
+        sequelize,
+        authenticateToken,
+        { services: { contentService } },
+        { services: { optisignsService } }
+      );
       const webhookService = webhookIntegration.services.webhookService;
       
       const resumedCount = await webhookService.checkResumeConditions();
