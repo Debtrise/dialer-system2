@@ -300,7 +300,6 @@ class WebhookService {
     const processingStartTime = Date.now();
     const announcementMetricData = {
       webhookEndpointId: webhookEndpoint.id,
-      tenantId: webhookEndpoint.tenantId,
       announcementStartTime: new Date(processingStartTime),
       contentProjectId: null,
       displayIds: [],
