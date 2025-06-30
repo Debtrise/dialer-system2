@@ -804,6 +804,138 @@ async function initializeElementLibrary(contentModels) {
   }
 },
 
+// Additional Full Page Animated Effects
+{
+  name: 'Solar Flare',
+  description: 'Intense swirling solar flare effect',
+  elementType: 'solar_flare',
+  category: 'Effects',
+  subcategory: 'Full Page',
+  isPublic: true,
+  difficulty: 'advanced',
+  tags: ['solar', 'flare', 'sun', 'animation', 'fullpage'],
+  defaultProperties: {
+    flareIntensity: 0.8,             // 0-1 intensity of the flare
+    rotationSpeed: 1.5,              // Speed of rotation
+    particleCount: 200,              // Number of particles
+    color: '#ff6600',                // Core color
+    loop: true                       // Continuous looping
+  },
+  defaultStyles: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000000',
+    overflow: 'hidden'
+  }
+},
+{
+  name: 'Rainbow Tunnel',
+  description: 'Vibrant tunnel with cycling rainbow colors',
+  elementType: 'rainbow_tunnel',
+  category: 'Effects',
+  subcategory: 'Full Page',
+  isPublic: true,
+  difficulty: 'intermediate',
+  tags: ['rainbow', 'tunnel', 'animation', 'colorful', 'fullpage'],
+  defaultProperties: {
+    tunnelDepth: 500,                // Depth in pixels
+    rotationSpeed: 2,                // Rotation speed
+    colorCycleSpeed: 5,              // How fast colors cycle
+    lineWidth: 4,                    // Width of tunnel lines
+    perspective: 800                 // Perspective distance
+  },
+  defaultStyles: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000000',
+    overflow: 'hidden'
+  }
+},
+{
+  name: 'Floating Balloons',
+  description: 'Balloons gently floating upwards',
+  elementType: 'floating_balloons',
+  category: 'Effects',
+  subcategory: 'Full Page',
+  isPublic: true,
+  difficulty: 'beginner',
+  tags: ['balloons', 'celebration', 'animation', 'fullpage'],
+  defaultProperties: {
+    balloonCount: 25,                // Number of balloons
+    riseSpeed: { min: 1, max: 3 },   // Rising speed range
+    swayAmount: 40,                  // Horizontal sway
+    colors: ['#ff0000', '#ffcc00', '#00ccff', '#66ff66'],
+    popOnClick: false
+  },
+  defaultStyles: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'transparent',
+    overflow: 'hidden'
+  }
+},
+{
+  name: 'Pixel Sparks',
+  description: 'Retro pixelated spark explosion',
+  elementType: 'pixel_sparks',
+  category: 'Effects',
+  subcategory: 'Full Page',
+  isPublic: true,
+  difficulty: 'intermediate',
+  tags: ['pixel', 'sparks', 'retro', 'animation', 'fullpage'],
+  defaultProperties: {
+    sparkCount: 150,                 // Number of sparks
+    decayRate: 0.9,                  // How quickly sparks fade
+    gravity: 0.5,                    // Downward force
+    spread: 60,                      // Spread angle
+    colors: ['#ffffff', '#ffe600', '#ff0080']
+  },
+  defaultStyles: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000000',
+    overflow: 'hidden'
+  }
+},
+{
+  name: 'Butterfly Swarm',
+  description: 'Graceful butterflies fluttering around',
+  elementType: 'butterfly_swarm',
+  category: 'Effects',
+  subcategory: 'Full Page',
+  isPublic: true,
+  difficulty: 'intermediate',
+  tags: ['butterfly', 'nature', 'animation', 'fullpage'],
+  defaultProperties: {
+    butterflyCount: 20,              // Number of butterflies
+    speedRange: { min: 1, max: 4 },  // Flight speed
+    sizeRange: { min: 30, max: 60 }, // Size of butterflies
+    wingFlapSpeed: 2,                // Wing animation speed
+    colors: ['#ff8a00', '#ff008a', '#00c0ff', '#8aff00']
+  },
+  defaultStyles: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'transparent',
+    overflow: 'hidden'
+  }
+},
+
 
 {
   name: 'Raining Money',
