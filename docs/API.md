@@ -141,6 +141,17 @@ Base path: `/api/optisigns`
 | ------ | -------- | ----------- |
 | `POST` | `/displays/:id/push` | Push content to a display immediately or by schedule. |
 
+## Billing API
+
+Base path: `/api/billing`
+
+| Method | Endpoint | Description |
+| ------ | -------- | ----------- |
+| `GET` | `/plans` | List available subscription plans. |
+| `GET` | `/subscription` | Retrieve the current tenant's active subscription. Requires authentication. |
+| `POST` | `/subscription` | Create a subscription for the authenticated tenant. Body accepts `{ planId, paymentMethodId }`. |
+| `POST` | `/payment-methods` | Add a payment method for the authenticated tenant. |
+
 ---
 
 These APIs are defined in `shared/content-creation-routes.js` and `shared/optisigns-routes.js` and are initialized by the server. Refer to the source for implementation specifics.
