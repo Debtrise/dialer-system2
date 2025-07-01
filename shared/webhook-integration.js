@@ -418,7 +418,7 @@ function initializeAnnouncementRoutes(app, authenticateToken, webhookModels, web
             optisigns: {
               displaySelection: { mode: 'all' },
               takeover: {
-                priority: 'MEDIUM',
+                priority: 'NORMAL',
                 duration: 45,
                 restoreAfter: true
               }
@@ -447,7 +447,7 @@ function initializeAnnouncementRoutes(app, authenticateToken, webhookModels, web
             optisigns: {
               displaySelection: { mode: 'all' },
               takeover: {
-                priority: 'MEDIUM',
+                priority: 'NORMAL',
                 duration: 35,
                 restoreAfter: true
               }
