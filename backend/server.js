@@ -100,6 +100,24 @@ async function fixCurrentPlaylistColumn(sequelize) {
   }
 }
 
+// Remove takeover records referencing displays that no longer exist
+async function removeOrphanTakeovers(sequelize) {
+  try {
+    const [_, metadata] = await sequelize.query(`
+      DELETE FROM "optisigns_takeovers" t
+      WHERE NOT EXISTS (
+        SELECT 1 FROM "optisigns_displays" d WHERE d.id = t.display_id
+      );
+    `);
+    const removed = metadata?.rowCount || metadata || 0;
+    if (removed > 0) {
+      console.log(`🧹 Removed ${removed} orphaned optisigns_takeovers records`);
+    }
+  } catch (err) {
+    console.error('⚠️ Failed to clean up orphaned takeovers:', err.message);
+  }
+}
+
 // Database Models
 const User = sequelize.define('User', {
   username: {
@@ -352,6 +370,8 @@ async function initializeModules() {
 
   // Ensure optisigns_displays.current_playlist_id uses UUID type
   await fixCurrentPlaylistColumn(sequelize);
+  // Clean up orphaned takeovers before syncing
+  await removeOrphanTakeovers(sequelize);
   
   // FIXED: Initialize OptisignsService FIRST before other modules that depend on it
   try {
@@ -1070,6 +1090,8 @@ async function startServer() {
 
     // Ensure schema compatibility before syncing
     await fixCurrentPlaylistColumn(sequelize);
+    // Remove any takeovers referencing missing displays
+    await removeOrphanTakeovers(sequelize);
 
     await sequelize.sync({ alter: false });
     console.log('Database models synchronized.');
