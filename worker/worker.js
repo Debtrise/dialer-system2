@@ -962,6 +962,36 @@ class AutoEnrollmentService {
 let journeyModels = null;
 let journeyService = null;
 
+// Ensure optisigns_takeovers.priority uses ENUM type
+async function ensurePriorityEnum() {
+  try {
+    const [result] = await sequelize.query(
+      `SELECT data_type, udt_name FROM information_schema.columns WHERE table_name = 'optisigns_takeovers' AND column_name = 'priority'`
+    );
+    const column = result[0];
+    const isEnum = column && column.data_type === 'USER-DEFINED' && column.udt_name === 'enum_optisigns_takeovers_priority';
+    if (!isEnum) {
+      console.log('Updating optisigns_takeovers.priority column to ENUM...');
+      await sequelize.transaction(async (t) => {
+        await sequelize.query('ALTER TABLE "optisigns_takeovers" ALTER COLUMN "priority" DROP DEFAULT', { transaction: t });
+        await sequelize.query(
+          `DO $$ BEGIN CREATE TYPE "public"."enum_optisigns_takeovers_priority" AS ENUM('EMERGENCY','HIGH','NORMAL'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+          { transaction: t }
+        );
+        await sequelize.query(
+          'ALTER TABLE "optisigns_takeovers" ALTER COLUMN "priority" TYPE "public"."enum_optisigns_takeovers_priority" USING ("priority"::text::"public"."enum_optisigns_takeovers_priority")',
+          { transaction: t }
+        );
+        await sequelize.query('ALTER TABLE "optisigns_takeovers" ALTER COLUMN "priority" SET DEFAULT \'NORMAL\'', { transaction: t });
+        await sequelize.query('ALTER TABLE "optisigns_takeovers" ALTER COLUMN "priority" SET NOT NULL', { transaction: t });
+      });
+      console.log('priority column updated.');
+    }
+  } catch (err) {
+    console.error('Failed to ensure priority column enum:', err);
+  }
+}
+
 // Initialize database and start cron job
 async function initializeWorker() { 
   try {
@@ -970,7 +1000,10 @@ async function initializeWorker() {
     // Test database connection
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully.');
-    
+
+    // Ensure priority column is correct before syncing models
+    await ensurePriorityEnum();
+
     // Sync models with database - FIRST sync basic models
     await sequelize.sync({ alter: false });
     console.log('✅ Basic models synchronized.');
