@@ -395,8 +395,11 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: true,
       field: 'optisigns_content_id'
     },
+    // Using STRING instead of ENUM avoids type casting issues when the
+    // column schema changes. Priority values are still validated at the
+    // application level.
     priority: {
-      type: DataTypes.ENUM('EMERGENCY', 'HIGH', 'NORMAL'),
+      type: DataTypes.STRING,
       allowNull: false,
       defaultValue: 'NORMAL'
     },
@@ -518,8 +521,10 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       field: 'content_id'
     },
+    // Stored as a simple string to prevent migration errors when new
+    // priority levels are introduced. Values are constrained in code.
     priority: {
-      type: DataTypes.ENUM('EMERGENCY', 'HIGH', 'NORMAL'),
+      type: DataTypes.STRING,
       allowNull: false,
       defaultValue: 'EMERGENCY'
     },
