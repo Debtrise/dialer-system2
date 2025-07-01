@@ -96,8 +96,12 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: true,
       field: 'current_content_id'
     },
+    // currentPlaylistId comes directly from OptiSigns and is not a UUID in
+    // their API.  Using STRING here avoids schema migrations attempting to
+    // cast existing values to UUID which caused startup errors when syncing
+    // the models.
     currentPlaylistId: {
-      type: DataTypes.UUID,
+      type: DataTypes.STRING,
       allowNull: true,
       field: 'current_playlist_id'
     },
