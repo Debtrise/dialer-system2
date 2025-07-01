@@ -403,8 +403,11 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       defaultValue: 'NORMAL'
     },
+    // Use STRING instead of ENUM to avoid type casting issues when the
+    // schema evolves. Status values are validated at the application
+    // level, so an explicit ENUM is not required here.
     status: {
-      type: DataTypes.ENUM('SCHEDULED', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'FAILED'),
+      type: DataTypes.STRING,
       allowNull: false,
       defaultValue: 'SCHEDULED'
     },
@@ -758,8 +761,10 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       field: 'end_time'
     },
+    // Store status as STRING to make schema migrations easier. Allowed
+    // values are enforced in the application code.
     status: {
-      type: DataTypes.ENUM('SCHEDULED', 'ACTIVE', 'COMPLETED', 'CANCELLED'),
+      type: DataTypes.STRING,
       defaultValue: 'SCHEDULED'
     },
     isRecurring: {
