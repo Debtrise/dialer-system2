@@ -71,6 +71,35 @@ let contentService = null;
 let optisignsService = null; // FIXED: Properly declared as global
 let billingModels = null;
 
+// Utility: ensure optisigns_displays.current_playlist_id column uses UUID type
+async function fixCurrentPlaylistColumn(sequelize) {
+  try {
+    const [info] = await sequelize.query(`
+      SELECT data_type FROM information_schema.columns
+      WHERE table_name = 'optisigns_displays'
+        AND column_name = 'current_playlist_id';
+    `);
+    const type = info[0]?.data_type;
+    if (type && type !== 'uuid') {
+      console.log('🔧 Converting optisigns_displays.current_playlist_id to UUID');
+      await sequelize.query(`
+        UPDATE "optisigns_displays"
+        SET "current_playlist_id" = NULL
+        WHERE "current_playlist_id" IS NOT NULL
+          AND "current_playlist_id" !~* '^[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{12}$';
+      `);
+      await sequelize.query(`
+        ALTER TABLE "optisigns_displays"
+        ALTER COLUMN "current_playlist_id" TYPE UUID
+        USING current_playlist_id::uuid;
+      `);
+      console.log('✅ Column converted to UUID');
+    }
+  } catch (err) {
+    console.error('⚠️ Column conversion failed:', err.message);
+  }
+}
+
 // Database Models
 const User = sequelize.define('User', {
   username: {
@@ -320,6 +349,9 @@ const initializeAmiConnection = async (tenant) => {
 // FIXED: Initialize all modules with corrected order and service passing
 async function initializeModules() {
   console.log('Initializing modules...');
+
+  // Ensure optisigns_displays.current_playlist_id uses UUID type
+  await fixCurrentPlaylistColumn(sequelize);
   
   // FIXED: Initialize OptisignsService FIRST before other modules that depend on it
   try {
@@ -1035,7 +1067,10 @@ async function startServer() {
   try {
     await sequelize.authenticate();
     console.log('Database connection established successfully.');
-    
+
+    // Ensure schema compatibility before syncing
+    await fixCurrentPlaylistColumn(sequelize);
+
     await sequelize.sync({ alter: false });
     console.log('Database models synchronized.');
     
