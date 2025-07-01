@@ -158,7 +158,14 @@ class TracersService {
           leadId,
           cacheHit: true
         });
-        
+
+        await this.updateUsageStats(tenantId, {
+          searchType,
+          status: 'success',
+          cost: 0,
+          cacheHit: true
+        });
+
         return cached.responseData;
       }
     }
@@ -225,7 +232,8 @@ class TracersService {
     await this.updateUsageStats(tenantId, {
       searchType,
       status,
-      cost: status === 'success' ? access.costPerSearch : 0
+      cost: status === 'success' ? access.costPerSearch : 0,
+      cacheHit: false
     });
     
     if (status === 'error') {
@@ -389,6 +397,24 @@ class TracersService {
     }
     
     return enrichment;
+  }
+
+  /**
+   * Enrich multiple leads sequentially
+   */
+  async bulkEnrichLeads(tenantId, leadIds, options = {}) {
+    const results = [];
+
+    for (const id of leadIds) {
+      try {
+        const enrichment = await this.enrichLead(tenantId, id, options);
+        results.push({ leadId: id, status: 'success', enrichment });
+      } catch (err) {
+        results.push({ leadId: id, status: 'error', error: err.message });
+      }
+    }
+
+    return results;
   }
 
   /**
@@ -839,10 +865,10 @@ class TracersService {
       where,
       attributes: [
         [this.models.sequelize.fn('SUM', this.models.sequelize.col('searchCount')), 'totalSearches'],
-        [this.models.sequelize.fn('SUM', this.models.sequelize.col('successCount')), 'totalSuccess'],
-        [this.models.sequelize.fn('SUM', this.models.sequelize.col('errorCount')), 'totalErrors'],
-        [this.models.sequelize.fn('SUM', this.models.sequelize.col('noResultsCount')), 'totalNoResults'],
-        [this.models.sequelize.fn('SUM', this.models.sequelize.col('cacheHitCount')), 'totalCacheHits'],
+        [this.models.sequelize.fn('SUM', this.models.sequelize.col('successfulSearches')), 'totalSuccess'],
+        [this.models.sequelize.fn('SUM', this.models.sequelize.col('failedSearches')), 'totalErrors'],
+        [this.models.sequelize.fn('SUM', this.models.sequelize.col('noResultSearches')), 'totalNoResults'],
+        [this.models.sequelize.fn('SUM', this.models.sequelize.col('cacheHits')), 'totalCacheHits'],
         [this.models.sequelize.fn('SUM', this.models.sequelize.col('totalCost')), 'totalCost']
       ],
       raw: true
@@ -870,7 +896,7 @@ class TracersService {
   /**
    * Update usage statistics
    */
-  async updateUsageStats(tenantId, { searchType, status, cost }) {
+  async updateUsageStats(tenantId, { searchType, status, cost, cacheHit = false }) {
     const today = moment().format('YYYY-MM-DD');
     
     const [usage, created] = await this.models.TracersUsage.findOrCreate({
@@ -880,11 +906,12 @@ class TracersService {
       },
       defaults: {
         searchCount: 0,
-        successCount: 0,
-        errorCount: 0,
-        noResultsCount: 0,
-        cacheHitCount: 0,
-        totalCost: 0
+        successfulSearches: 0,
+        failedSearches: 0,
+        noResultSearches: 0,
+        cacheHits: 0,
+        totalCost: 0,
+        searchTypes: { phone: 0, name: 0, email: 0, address: 0, comprehensive: 0 }
       }
     });
     
@@ -892,13 +919,22 @@ class TracersService {
       searchCount: usage.searchCount + 1,
       totalCost: usage.totalCost + (cost || 0)
     };
-    
+
+    // Update search type breakdown
+    const typeCounts = { ...(usage.searchTypes || {}) };
+    typeCounts[searchType] = (typeCounts[searchType] || 0) + 1;
+    updates.searchTypes = typeCounts;
+
     if (status === 'success') {
-      updates.successCount = usage.successCount + 1;
+      updates.successfulSearches = usage.successfulSearches + 1;
     } else if (status === 'error' || status === 'rate_limited') {
-      updates.errorCount = usage.errorCount + 1;
+      updates.failedSearches = usage.failedSearches + 1;
     } else if (status === 'no_results') {
-      updates.noResultsCount = usage.noResultsCount + 1;
+      updates.noResultSearches = usage.noResultSearches + 1;
+    }
+
+    if (cacheHit) {
+      updates.cacheHits = usage.cacheHits + 1;
     }
     
     await usage.update(updates);

@@ -3,6 +3,7 @@
 
 const express = require('express');
 const TracersService = require('./tracers-service');
+const { Op } = require('sequelize');
 
 module.exports = function(app, sequelize, authenticateToken) {
   const router = express.Router();
