@@ -17,7 +17,7 @@ class TracersService {
     this.apiConfig = {
       apName: process.env.GALAXY_AP_NAME || process.env.TRACERS_PROFILE_NAME || 'cardinallaw1',
       apPassword: process.env.GALAXY_AP_PASSWORD || process.env.TRACERS_PROFILE_PASSWORD || '15ec1c331e44430f853f25fe50469244',
-      baseUrl: process.env.GALAXY_API_URL || process.env.TRACERS_API_URL || 'https://api.tracersapi.com',
+      baseUrl: process.env.GALAXY_API_URL || process.env.TRACERS_API_URL || 'https://api.galaxysearchapi.com',
       cacheHours: parseInt(process.env.TRACERS_CACHE_HOURS || '24'),
       rateLimit: parseInt(process.env.TRACERS_RATE_LIMIT || '100'),
       timeout: parseInt(process.env.TRACERS_TIMEOUT || '30000')
