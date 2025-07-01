@@ -1375,74 +1375,40 @@ async publishToOptiSigns(projectId, tenantId, displayIds = [], options = {}) {
 
     for (const displayId of displayIds) {
       try {
-        console.log(`🔄 Assigning self-contained content to display ${displayId}...`);
-        
-        // Method 1: Try direct assignment
-        try {
-          await this.optisignsService.assignContentToDevice(
-            tenantId,
-            displayId,
-            uploadedAsset.optisignsId,
-            'ASSET'
-          );
-          
-          pushResults.successful.push({
-            displayId,
-            method: 'self_contained_assignment',
-            deviceName: displayId,
-            publicUrl: publicUrl
-          });
-          
-          console.log(`✅ Display ${displayId} assigned self-contained content successfully`);
-          continue;
-          
-        } catch (assignError) {
-          console.warn(`⚠️ Direct assignment failed: ${assignError.message}`);
-        }
-        
-        // Method 2: Try takeover approach
-        try {
-          const takeoverResult = await this.optisignsService.takeoverDevice(
-            tenantId,
-            displayId,
-            'ASSET',
-            uploadedAsset.id,
-            {
-              priority: options.priority || 'HIGH',
-              duration: options.duration || null,
-              message: options.message || `Published: ${project.name}`,
-              restoreAfter: options.restoreAfter !== false,
-              initiatedBy: options.userId || 'system',
-              teamId: options.teamId || null
-            }
-          );
+        console.log(`🚀 Triggering takeover for display ${displayId}...`);
 
-          pushResults.successful.push({
-            displayId,
-            method: 'self_contained_takeover',
-            takeoverId: takeoverResult.takeover?.id,
-            deviceName: takeoverResult.device?.name || displayId,
-            publicUrl: publicUrl
-          });
-
-          console.log(`✅ Display ${displayId} takeover successful with self-contained content`);
-          
-        } catch (takeoverError) {
-          pushResults.failed.push({
-            displayId,
-            error: takeoverError.message,
-            publicUrl: publicUrl
-          });
-          console.error(`❌ Display ${displayId} assignment failed:`, takeoverError.message);
-        }
-        
-      } catch (error) {
-        pushResults.failed.push({
+        const takeoverResult = await this.optisignsService.takeoverDevice(
+          tenantId,
           displayId,
-          error: error.message,
+          'ASSET',
+          uploadedAsset.optisignsId,
+          {
+            priority: options.priority || 'HIGH',
+            duration: options.duration || null,
+            message: options.message || `Published: ${project.name}`,
+            restoreAfter: options.restoreAfter !== false,
+            initiatedBy: options.userId || 'system',
+            teamId: options.teamId || null
+          }
+        );
+
+        pushResults.successful.push({
+          displayId,
+          method: 'takeover',
+          takeoverId: takeoverResult.takeover?.id,
+          deviceName: takeoverResult.device?.name || displayId,
           publicUrl: publicUrl
         });
-        console.error(`❌ Display ${displayId} failed:`, error.message);
+
+        console.log(`✅ Display ${displayId} takeover successful`);
+
+      } catch (takeoverError) {
+        pushResults.failed.push({
+          displayId,
+          error: takeoverError.message,
+          publicUrl: publicUrl
+        });
+        console.error(`❌ Display ${displayId} takeover failed:`, takeoverError.message);
       }
     }
 
