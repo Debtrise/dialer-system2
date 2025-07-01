@@ -1,5 +1,6 @@
 // sales-rep-photo-routes.js
 // Routes for managing sales rep photos and fallback configuration
+// ENHANCED with database type compatibility for categories column
 
 const express = require('express');
 const multer = require('multer');
@@ -29,6 +30,206 @@ const upload = multer({
   }
 });
 
+/**
+ * Helper function to safely query categories with fallback for different column types
+ */
+function getSalesRepCategoriesWhere(sequelize) {
+  try {
+    // Try array-based query first (for properly configured databases)
+    return {
+      categories: {
+        [sequelize.Sequelize.Op.overlap]: ['Sales Reps']
+      }
+    };
+  } catch (error) {
+    console.warn('⚠️ Array-based categories query not supported, using string fallback');
+    // Fallback for VARCHAR-type categories column
+    return sequelize.literal(`LOWER(categories::text) LIKE '%sales rep%' OR LOWER(categories::text) LIKE '%sales_rep%'`);
+  }
+}
+
+/**
+ * Enhanced find function with database type compatibility using raw SQL
+ */
+async function findSalesRepAsset(ContentAsset, sequelize, whereConditions) {
+  const tenantId = whereConditions.tenantId;
+  let emailCondition = '';
+  let replacements = {};
+  
+  // Handle email condition properly
+  if (whereConditions[sequelize.Sequelize.Op.and]) {
+    const literalCondition = whereConditions[sequelize.Sequelize.Op.and][0];
+    if (literalCondition && literalCondition.val) {
+      emailCondition = `AND ${literalCondition.val}`;
+      replacements = whereConditions.replacements || {};
+    }
+  }
+  
+  const rawQuery = `
+    SELECT * FROM content_assets 
+    WHERE (
+      (categories @> ARRAY['Sales Reps']::text[] OR categories @> ARRAY['sales_reps']::text[])
+      OR 
+      (LOWER(categories::text) LIKE '%sales rep%' OR LOWER(categories::text) LIKE '%sales_rep%')
+    )
+    AND tenant_id = $1
+    ${emailCondition}
+    ORDER BY created_at DESC 
+    LIMIT 1
+  `;
+  
+  try {
+    const [results] = await sequelize.query(rawQuery, {
+      bind: [tenantId],
+      replacements: replacements,
+      type: sequelize.QueryTypes.SELECT
+    });
+    
+    if (results && results.length > 0) {
+      // Convert raw result back to model instance
+      return await ContentAsset.findByPk(results[0].id);
+    }
+    return null;
+  } catch (error) {
+    console.error('❌ Error in findSalesRepAsset:', error.message);
+    // Fallback to simple text search only
+    const fallbackQuery = `
+      SELECT * FROM content_assets 
+      WHERE LOWER(categories::text) LIKE '%sales rep%'
+      AND tenant_id = $1
+      ${emailCondition}
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `;
+    
+    try {
+      const [fallbackResults] = await sequelize.query(fallbackQuery, {
+        bind: [tenantId],
+        replacements: replacements,
+        type: sequelize.QueryTypes.SELECT
+      });
+      
+      if (fallbackResults && fallbackResults.length > 0) {
+        return await ContentAsset.findByPk(fallbackResults[0].id);
+      }
+    } catch (fallbackError) {
+      console.error('❌ Fallback query also failed:', fallbackError.message);
+    }
+    return null;
+  }
+}
+
+/**
+ * Enhanced findAll function with database type compatibility using raw SQL
+ */
+async function findAllSalesRepAssets(ContentAsset, sequelize, whereConditions, options = {}) {
+  const { limit = 50, offset = 0 } = options;
+  const tenantId = whereConditions.tenantId;
+  
+  const rawQuery = `
+    SELECT * FROM content_assets 
+    WHERE (
+      (categories @> ARRAY['Sales Reps']::text[] OR categories @> ARRAY['sales_reps']::text[])
+      OR 
+      (LOWER(categories::text) LIKE '%sales rep%' OR LOWER(categories::text) LIKE '%sales_rep%')
+    )
+    AND tenant_id = $1
+    ORDER BY created_at DESC 
+    LIMIT $2 OFFSET $3
+  `;
+  
+  try {
+    const [results] = await sequelize.query(rawQuery, {
+      bind: [tenantId, limit, offset],
+      type: sequelize.QueryTypes.SELECT
+    });
+    
+    if (results && results.length > 0) {
+      // Convert raw results back to model instances
+      const ids = results.map(r => r.id);
+      return await ContentAsset.findAll({
+        where: { id: { [sequelize.Sequelize.Op.in]: ids } },
+        order: [['createdAt', 'DESC']]
+      });
+    }
+    return [];
+  } catch (error) {
+    console.error('❌ Error in findAllSalesRepAssets:', error.message);
+    // Fallback to simple text search only
+    const fallbackQuery = `
+      SELECT * FROM content_assets 
+      WHERE LOWER(categories::text) LIKE '%sales rep%'
+      AND tenant_id = $1
+      ORDER BY created_at DESC 
+      LIMIT $2 OFFSET $3
+    `;
+    
+    try {
+      const [fallbackResults] = await sequelize.query(fallbackQuery, {
+        bind: [tenantId, limit, offset],
+        type: sequelize.QueryTypes.SELECT
+      });
+      
+      if (fallbackResults && fallbackResults.length > 0) {
+        const ids = fallbackResults.map(r => r.id);
+        return await ContentAsset.findAll({
+          where: { id: { [sequelize.Sequelize.Op.in]: ids } },
+          order: [['createdAt', 'DESC']]
+        });
+      }
+    } catch (fallbackError) {
+      console.error('❌ Fallback findAll also failed:', fallbackError.message);
+    }
+    return [];
+  }
+}
+
+/**
+ * Enhanced count function with database type compatibility using raw SQL
+ */
+async function countSalesRepAssets(ContentAsset, sequelize, whereConditions) {
+  const tenantId = whereConditions.tenantId;
+  
+  const rawQuery = `
+    SELECT COUNT(*) as count FROM content_assets 
+    WHERE (
+      (categories @> ARRAY['Sales Reps']::text[] OR categories @> ARRAY['sales_reps']::text[])
+      OR 
+      (LOWER(categories::text) LIKE '%sales rep%' OR LOWER(categories::text) LIKE '%sales_rep%')
+    )
+    AND tenant_id = $1
+  `;
+  
+  try {
+    const [results] = await sequelize.query(rawQuery, {
+      bind: [tenantId],
+      type: sequelize.QueryTypes.SELECT
+    });
+    
+    return parseInt(results[0]?.count) || 0;
+  } catch (error) {
+    console.error('❌ Error in countSalesRepAssets:', error.message);
+    // Fallback to simple text search only
+    const fallbackQuery = `
+      SELECT COUNT(*) as count FROM content_assets 
+      WHERE LOWER(categories::text) LIKE '%sales rep%'
+      AND tenant_id = $1
+    `;
+    
+    try {
+      const [fallbackResults] = await sequelize.query(fallbackQuery, {
+        bind: [tenantId],
+        type: sequelize.QueryTypes.SELECT
+      });
+      
+      return parseInt(fallbackResults[0]?.count) || 0;
+    } catch (fallbackError) {
+      console.error('❌ Fallback count also failed:', fallbackError.message);
+      return 0;
+    }
+  }
+}
+
 module.exports = function(app, sequelize, authenticateToken, contentService) {
   const router = express.Router();
   const { ContentAsset } = sequelize.models;
@@ -55,19 +256,13 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
         hasBuffer: !!req.file.buffer
       });
 
-      // Check if photo already exists for this email
+      // Check if photo already exists for this email - ENHANCED with compatibility
       console.log('🔍 Checking for existing photo for email:', normalizedEmail);
-      const existingAsset = await ContentAsset.findOne({
-        where: {
-          tenantId: req.user.tenantId,
-          categories: {
-            [sequelize.Sequelize.Op.overlap]: ['Sales Reps']
-          },
-          [sequelize.Sequelize.Op.and]: [
-            sequelize.literal(`metadata->>'repEmail' = :repEmail`)
-          ]
-        },
-        replacements: { repEmail: normalizedEmail }
+      const existingAsset = await findSalesRepAsset(ContentAsset, sequelize, {
+        tenantId: req.user.tenantId,
+        [sequelize.Sequelize.Op.and]: [
+          sequelize.literal(`metadata->>'repEmail' = :repEmail`)
+        ]
       });
 
       if (existingAsset && !req.body.replace) {
@@ -134,35 +329,6 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
         console.warn('⚠️ Failed to persist sales rep thumbnails:', thumbErr.message);
       }
 
-      // Persist thumbnails/previews in dedicated sales rep folders
-      try {
-        const thumbName = path.basename(asset.thumbnailUrl || '');
-        const repThumbDir = contentService.directories.salesRepThumbnails;
-        const repPreviewDir = contentService.directories.salesRepPreviews;
-        await fs.mkdir(repThumbDir, { recursive: true });
-        await fs.mkdir(repPreviewDir, { recursive: true });
-
-        if (thumbName) {
-          const src = path.join(contentService.directories.thumbnails, thumbName);
-          const dest = path.join(repThumbDir, thumbName);
-          await fs.copyFile(src, dest);
-          asset.thumbnailUrl = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-thumbnails/${thumbName}`;
-        }
-
-        const newPreviews = {};
-        for (const [size, url] of Object.entries(asset.previewUrls || {})) {
-          const name = path.basename(url);
-          const src = path.join(contentService.directories.previews, name);
-          const dest = path.join(repPreviewDir, name);
-          await fs.copyFile(src, dest);
-          newPreviews[size] = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-previews/${name}`;
-        }
-
-        await asset.update({ thumbnailUrl: asset.thumbnailUrl, previewUrls: newPreviews });
-      } catch (thumbErr) {
-        console.warn('⚠️ Failed to persist sales rep thumbnails:', thumbErr.message);
-      }
-
       console.log('✅ Asset uploaded with thumbnails:', {
         id: asset.id,
         thumbnailUrl: asset.thumbnailUrl,
@@ -190,7 +356,7 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
     }
   });
 
-  // Bulk upload with thumbnails
+  // Bulk upload with thumbnails - ENHANCED with compatibility
   router.post('/sales-rep-photos/bulk-upload', authenticateToken, upload.array('photos', 50), async (req, res) => {
     try {
       const { mappings } = req.body;
@@ -295,7 +461,7 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
     }
   });
 
-  // Bulk create sales reps from CSV with photo download
+  // Bulk create sales reps from CSV with photo download - ENHANCED with compatibility
   router.post('/sales-rep-photos/bulk-csv', authenticateToken, upload.single('csv'), async (req, res) => {
     try {
       if (req.user.role !== 'admin') {
@@ -450,7 +616,7 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
     }
   });
 
-  // Set fallback photo with thumbnails
+  // Set fallback photo with thumbnails - ENHANCED with compatibility
   router.post('/sales-rep-photos/fallback', authenticateToken, upload.single('photo'), async (req, res) => {
     try {
       if (!req.file) {
@@ -509,7 +675,7 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
     }
   });
 
-  // Get current fallback photo
+  // Get current fallback photo - ENHANCED with compatibility
   router.get('/sales-rep-photos/fallback', authenticateToken, async (req, res) => {
     try {
       const asset = await ContentAsset.findOne({
@@ -537,24 +703,17 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
     }
   });
 
-  // Get sales rep photo by email - FIXED query
+  // Get sales rep photo by email - ENHANCED with compatibility
   router.get('/sales-rep-photos/by-email/:email', authenticateToken, async (req, res) => {
     try {
       const email = req.params.email.toLowerCase();
       console.log('🔍 Looking for photo for email:', email);
       
-      const asset = await ContentAsset.findOne({
-        where: {
-          tenantId: req.user.tenantId,
-          categories: {
-            [sequelize.Sequelize.Op.overlap]: ['Sales Reps']
-          },
-          // Fixed metadata query
-          [sequelize.Sequelize.Op.and]: [
-            sequelize.literal(`metadata->>'repEmail' = :repEmail`)
-          ]
-        },
-        replacements: { repEmail: email }
+      const asset = await findSalesRepAsset(ContentAsset, sequelize, {
+        tenantId: req.user.tenantId,
+        [sequelize.Sequelize.Op.and]: [
+          sequelize.literal(`metadata->>'repEmail' = :repEmail`)
+        ]
       });
 
       if (!asset) {
@@ -576,30 +735,21 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
     }
   });
 
-  // List all sales rep photos - FIXED query
+  // List all sales rep photos - ENHANCED with compatibility
   router.get('/sales-rep-photos', authenticateToken, async (req, res) => {
     try {
       const { page = 1, limit = 50 } = req.query;
       
-      const assets = await ContentAsset.findAll({
-        where: {
-          tenantId: req.user.tenantId,
-          categories: {
-            [sequelize.Sequelize.Op.overlap]: ['Sales Reps']
-          }
-        },
+      const assets = await findAllSalesRepAssets(ContentAsset, sequelize, {
+        tenantId: req.user.tenantId
+      }, {
         limit: parseInt(limit),
         offset: (parseInt(page) - 1) * parseInt(limit),
         order: [['createdAt', 'DESC']]
       });
 
-      const count = await ContentAsset.count({
-        where: {
-          tenantId: req.user.tenantId,
-          categories: {
-            [sequelize.Sequelize.Op.overlap]: ['Sales Reps']
-          }
-        }
+      const count = await countSalesRepAssets(ContentAsset, sequelize, {
+        tenantId: req.user.tenantId
       });
 
       const photos = assets.map(asset => ({
@@ -627,7 +777,7 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
     }
   });
 
-  // Generate celebration video for a sales rep
+  // Generate celebration video for a sales rep - ENHANCED with compatibility
   router.post('/sales-rep-photos/generate-video', authenticateToken, async (req, res) => {
     try {
       const { repEmail, repName, dealAmount, companyName } = req.body;
@@ -637,15 +787,11 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
         return res.status(400).json({ error: 'repEmail is required' });
       }
 
-      const asset = await ContentAsset.findOne({
-        where: {
-          tenantId: req.user.tenantId,
-          categories: {
-            [sequelize.Sequelize.Op.overlap]: ['Sales Reps']
-          },
-          [sequelize.Sequelize.Op.and]: [sequelize.literal(`metadata->>'repEmail' = :repEmail`)]
-        },
-        replacements: { repEmail: normalizedEmail }
+      const asset = await findSalesRepAsset(ContentAsset, sequelize, {
+        tenantId: req.user.tenantId,
+        [sequelize.Sequelize.Op.and]: [
+          sequelize.literal(`metadata->>'repEmail' = :repEmail`)
+        ]
       });
 
       if (!asset) {
@@ -666,17 +812,12 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
     }
   });
 
-  // Delete sales rep photo - FIXED query
+  // Delete sales rep photo - ENHANCED with compatibility
   router.delete('/sales-rep-photos/:id', authenticateToken, async (req, res) => {
     try {
-      const asset = await ContentAsset.findOne({
-        where: {
-          id: req.params.id,
-          tenantId: req.user.tenantId,
-          categories: {
-            [sequelize.Sequelize.Op.overlap]: ['Sales Reps']
-          }
-        }
+      const asset = await findSalesRepAsset(ContentAsset, sequelize, {
+        id: req.params.id,
+        tenantId: req.user.tenantId
       });
 
       if (!asset) {
@@ -708,5 +849,5 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
   // Register routes
   app.use('/api', router);
   
-  console.log('✅ Sales rep photo routes registered successfully');
+  console.log('✅ Sales rep photo routes registered successfully with database compatibility');
 };

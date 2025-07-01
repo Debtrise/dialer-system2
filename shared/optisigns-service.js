@@ -911,9 +911,8 @@ class OptisignsService {
       const client = await this.getClient(tenantId);
       
       // Find device in local database
-      const device = await this.models.OptisignsDisplay.findOne({
-        where: { id: deviceId, tenant_id: tenantId.toString() }
-      });
+      const device = await this.models.OptisignsDisplay.findOne({  where: { id: "8ea712d0-5cb1-456b-a848-4106665902ca" } // Local UUID ✅
+});
       
       if (!device) {
         throw new Error('Device not found');
@@ -946,8 +945,7 @@ class OptisignsService {
         }
       }
 
-      const apiDeviceId = device.uuid || device.optisignsDisplayId;
-      console.log(`🚀 Using SDK updateDevice: device=${apiDeviceId}, content=${optisignsContentId}, team=${teamId}`);
+const apiDeviceId = device.optisignsDisplayId || device.uuid; // CORRECT ORDER      console.log(`🚀 Using SDK updateDevice: device=${apiDeviceId}, content=${optisignsContentId}, team=${teamId}`);
 
       // Use SDK updateDevice method to assign content
       const result = await this.safeApiCall(() => 

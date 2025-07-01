@@ -298,21 +298,18 @@ class WebhookService {
   }
 
   /**
-   * Process announcement webhook with enhanced photo support
+   * Process announcement webhook with enhanced photo support and improved OptiSigns error handling
    */
   async processAnnouncementWebhook(webhookEndpoint, payload) {
     const processingStartTime = Date.now();
-    const tenantId =
-      webhookEndpoint.tenantId ||
-      (typeof webhookEndpoint.get === 'function'
-        ? webhookEndpoint.get('tenantId')
-        : webhookEndpoint.dataValues?.tenantId);
+    const tenantId = webhookEndpoint.tenantId || 
+      (typeof webhookEndpoint.get === 'function' ? 
+        webhookEndpoint.get('tenantId') : 
+        webhookEndpoint.dataValues?.tenantId);
 
     const announcementMetricData = {
       tenantId: webhookEndpoint.tenantId,
       webhookEndpointId: webhookEndpoint.id,
-      tenantId: tenantId,
-
       announcementStartTime: new Date(processingStartTime),
       contentProjectId: null,
       displayIds: [],
@@ -320,7 +317,8 @@ class WebhookService {
       failedDisplays: 0,
       variablesInjected: {},
       variablesMissing: [],
-      errors: []
+      errors: [],
+      optisignsErrors: [] // Track specific OptiSigns errors
     };
 
     try {
@@ -340,7 +338,10 @@ class WebhookService {
       
       // Step 1: Check trigger conditions
       if (announcementConfig.advanced?.triggerConditions?.enabled) {
-        const conditionsPassed = await this.checkAnnouncementTriggerConditions(announcementConfig.advanced.triggerConditions, payload);
+        const conditionsPassed = await this.checkAnnouncementTriggerConditions(
+          announcementConfig.advanced.triggerConditions, 
+          payload
+        );
         if (!conditionsPassed) {
           console.log('⏸️ Announcement skipped due to trigger conditions');
           return {
@@ -409,6 +410,8 @@ class WebhookService {
           webhookEndpoint.tenantId
         );
         
+        console.log('✅ Variables injected into project elements');
+        
       } catch (error) {
         console.error('❌ Failed to create content project:', error);
         announcementMetricData.errors.push({
@@ -420,19 +423,34 @@ class WebhookService {
 
       // Record content generation time
       announcementMetricData.contentGenerationTime = Date.now() - processingStartTime;
-
-      // Step 4: Determine target displays
+      
+      // Step 4: Determine target displays with enhanced debugging
+      console.log('🔍 Determining target displays for OptiSigns...');
+      console.log('📋 Display selection config:', JSON.stringify(announcementConfig.optisigns?.displaySelection, null, 2));
+      
       const targetDisplays = await this.getAnnouncementTargetDisplays(
         webhookEndpoint.tenantId,
-        announcementConfig.optisigns.displaySelection,
+        announcementConfig.optisigns?.displaySelection || { mode: 'all' },
         payload
       );
       
+      console.log(`🎯 Found ${targetDisplays.length} target displays:`, targetDisplays.map(d => ({
+        id: d.id,
+        name: d.name,
+        location: d.location,
+        isActive: d.isActive,
+        isOnline: d.isOnline,
+        optisignsDisplayId: d.optisignsDisplayId,
+        uuid: d.uuid
+      })));
+      
       announcementMetricData.displayIds = targetDisplays.map(d => d.id);
       
-      // Step 5: Generate and publish content to OptiSigns
+      // Step 5: ENHANCED OptiSigns publishing with detailed error handling
       if (targetDisplays.length > 0) {
         try {
+          console.log('📦 Starting export generation for OptiSigns...');
+          
           // Generate export
           const exportOptions = {
             format: 'html',
@@ -447,68 +465,59 @@ class WebhookService {
           );
           contentExportId = exportInfo.exportId;
 
-          console.log('📦 Generated content export:', exportInfo.publicUrl);
-          
-          // Publish to OptiSigns
-          const publishResult = await this.contentService.publishToOptiSigns(
-            contentProject.id,
-            webhookEndpoint.tenantId,
-            targetDisplays.map(d => d.optisignsDisplayId),
-            {
-              priority: announcementConfig.optisigns.takeover?.priority || 'NORMAL',
-              duration: announcementConfig.optisigns.takeover?.duration,
-              exportId: contentExportId
-            }
-          );
-          
-          announcementMetricData.successfulDisplays = publishResult.successCount || targetDisplays.length;
-          console.log('🎯 Published to OptiSigns displays:', publishResult);
-          
-        } catch (error) {
-          console.error('❌ Failed to publish to OptiSigns:', error);
-          announcementMetricData.errors.push({
-            stage: 'optisigns_publish',
-            error: error.message
+          console.log('✅ Generated content export successfully');
+          console.log('📦 Export info:', {
+            exportId: exportInfo.exportId,
+            publicUrl: exportInfo.publicUrl,
+            format: exportInfo.format
           });
-          announcementMetricData.failedDisplays = targetDisplays.length;
-        }
-      }
-
-      // Optional video celebration
-      if (announcementConfig.videoCelebration?.enabled && extractedVariables.variables.rep_photo) {
-        try {
-          const videoData = {
-            repName: extractedVariables.variables.rep_name,
-            repPhotoUrl: extractedVariables.variables.rep_photo,
-            dealAmount: extractedVariables.variables.deal_amount,
-            companyName: extractedVariables.variables.company_name
-          };
-
-          const videoInfo = await this.contentService.generateCelebrationVideo(videoData);
-          const videoBuffer = await fs.readFile(videoInfo.filePath);
-          const uploaded = await this.optisignsService.uploadFileAsBase64(
+          
+          // ENHANCED OptiSigns publishing with better error handling
+          const publishResult = await this.publishToOptisignsWithRetry(
+            contentProject,
+            exportInfo,
+            targetDisplays,
+            announcementConfig.optisigns,
             webhookEndpoint.tenantId,
-            videoBuffer,
-            `celebration_${Date.now()}.mp4`,
-            `celebration_${Date.now()}.mp4`,
-            { contentType: 'video/mp4' }
+            announcementMetricData
           );
-
-          for (const display of targetDisplays) {
-            await this.optisignsService.takeoverDevice(
-              webhookEndpoint.tenantId,
-              display.id,
-              'ASSET',
-              uploaded.optisignsId,
-              {
-                duration: announcementConfig.optisigns.takeover?.duration || 30,
-                priority: announcementConfig.optisigns.takeover?.priority || 'HIGH'
-              }
-            );
-          }
+          
+          announcementMetricData.successfulDisplays = publishResult.successCount;
+          announcementMetricData.failedDisplays = publishResult.failedCount;
+          announcementMetricData.optisignsErrors = publishResult.errors;
+          
+          console.log('🎯 OptiSigns publishing completed!');
+          console.log('📊 Final Results:', {
+            successful: publishResult.successCount,
+            failed: publishResult.failedCount,
+            total: targetDisplays.length,
+            errors: publishResult.errors
+          });
+          
         } catch (error) {
-          console.error('Error publishing celebration video:', error);
+          console.error('❌ Failed to publish to OptiSigns displays:', error);
+          announcementMetricData.failedDisplays = targetDisplays.length;
+          announcementMetricData.errors.push({
+            stage: 'optisigns_publishing',
+            error: error.message,
+            stack: error.stack
+          });
+          announcementMetricData.optisignsErrors.push({
+            error: error.message,
+            stage: 'export_or_setup'
+          });
+          console.log('⚠️ Continuing with partial success (content created but not published to displays)');
         }
+      } else {
+        console.log('⚠️ No target displays found for OptiSigns publishing');
+        
+        // Enhanced debugging for display selection
+        await this.debugDisplaySelection(webhookEndpoint.tenantId, announcementConfig.optisigns?.displaySelection);
+        
+        announcementMetricData.errors.push({
+          stage: 'display_selection',
+          error: 'No target displays found'
+        });
       }
       
       // Step 6: Record metrics
@@ -529,8 +538,10 @@ class WebhookService {
           contentExportId,
           targetDisplays: targetDisplays.length,
           successfulDisplays: announcementMetricData.successfulDisplays,
+          failedDisplays: announcementMetricData.failedDisplays,
           variablesInjected: Object.keys(extractedVariables.variables).length,
-          processingTime: Date.now() - processingStartTime
+          processingTime: Date.now() - processingStartTime,
+          optisignsErrors: announcementMetricData.optisignsErrors
         }
       };
       
@@ -556,7 +567,300 @@ class WebhookService {
   }
 
   /**
-   * Extract variables from announcement webhook payload WITH PHOTO SUPPORT
+   * ENHANCED OptiSigns publishing with retry logic and detailed error tracking
+   */
+  async publishToOptisignsWithRetry(contentProject, exportInfo, targetDisplays, optisignsConfig, tenantId, metricsData) {
+    const publishResults = {
+      successCount: 0,
+      failedCount: 0,
+      errors: [],
+      displayResults: []
+    };
+
+    console.log('🚀 Starting enhanced OptiSigns publishing...');
+    
+    // Validate OptiSigns service first
+    if (!this.optisignsService) {
+      const error = 'OptiSigns service not available';
+      console.error('❌', error);
+      publishResults.errors.push({
+        stage: 'service_validation',
+        error: error,
+        displayId: null,
+        displayName: 'N/A'
+      });
+      publishResults.failedCount = targetDisplays.length;
+      return publishResults;
+    }
+
+    // Process each display with enhanced error handling
+    for (let i = 0; i < targetDisplays.length; i++) {
+      const display = targetDisplays[i];
+      const displayInfo = {
+        id: display.id,
+        name: display.name,
+        optisignsDisplayId: display.optisignsDisplayId,
+        uuid: display.uuid
+      };
+      
+      console.log(`\n📺 [${i + 1}/${targetDisplays.length}] Processing display: ${display.name} (${display.id})`);
+      console.log(`🔍 Display info:`, displayInfo);
+
+      try {
+        // Validate display has OptiSigns ID - prioritize optisignsDisplayId over uuid
+        const optisignsApiId = display.optisignsDisplayId || display.uuid;
+        if (!optisignsApiId || optisignsApiId === 'undefined' || optisignsApiId === 'null') {
+          throw new Error(`Display missing OptiSigns API ID - optisignsDisplayId: "${display.optisignsDisplayId}", uuid: "${display.uuid}"`);
+        }
+
+        console.log(`✅ Using OptiSigns API ID: ${optisignsApiId}`);
+
+        // Create website asset using OptiSigns service method with retry
+        let assetResult;
+        const maxRetries = 3;
+        let retryCount = 0;
+        
+        while (retryCount < maxRetries) {
+          try {
+            console.log(`📦 Creating OptiSigns website asset (attempt ${retryCount + 1}/${maxRetries})...`);
+            
+            // Use the existing createWebsiteAsset method from OptiSigns service
+            assetResult = await this.optisignsService.createWebsiteAsset(
+              tenantId,
+              exportInfo.publicUrl,
+              `Webhook Announcement - ${contentProject.name}`,
+              null // teamId - let service use default
+            );
+            
+            console.log('✅ Created OptiSigns website asset:', {
+              id: assetResult.optisignsId,
+              name: assetResult.name,
+              url: assetResult.url || assetResult.webLink
+            });
+            break;
+            
+          } catch (assetError) {
+            retryCount++;
+            console.error(`❌ Asset creation attempt ${retryCount} failed:`, assetError.message);
+            
+            if (retryCount >= maxRetries) {
+              throw new Error(`Asset creation failed after ${maxRetries} attempts: ${assetError.message}`);
+            }
+            
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+          }
+        }
+
+        // Use direct pushContent method instead of takeoverDevice for better reliability
+        retryCount = 0;
+        while (retryCount < maxRetries) {
+          try {
+            console.log(`🎯 Pushing content to display (attempt ${retryCount + 1}/${maxRetries})...`);
+            console.log(`📋 Push config:`, {
+              displayId: display.id,
+              optisignsApiId: optisignsApiId,
+              assetId: assetResult.optisignsId,
+              method: 'pushContent'
+            });
+            
+            // Use pushContent method which is more reliable for immediate content assignment
+            const pushResult = await this.optisignsService.pushContent(
+              tenantId,
+              display.id, // Use local display ID
+              assetResult.optisignsId,
+              'NOW', // Schedule immediately
+              null // teamId - let service use default
+            );
+            
+            console.log(`🎯 ✅ Successfully pushed content to ${display.name}!`);
+            console.log(`📊 Push result:`, pushResult);
+            
+            publishResults.successCount++;
+            publishResults.displayResults.push({
+              displayId: display.id,
+              displayName: display.name,
+              status: 'success',
+              assetId: assetResult.optisignsId,
+              pushResult: pushResult,
+              method: 'pushContent'
+            });
+            break;
+            
+          } catch (pushError) {
+            retryCount++;
+            console.error(`❌ Push attempt ${retryCount} failed for ${display.name}:`, pushError.message);
+            
+            // If pushContent fails, try takeoverDevice as fallback
+            if (retryCount === maxRetries) {
+              console.log(`🔄 Trying takeover method as fallback...`);
+              try {
+                const takeoverResult = await this.optisignsService.takeoverDevice(
+                  tenantId,
+                  display.id,
+                  'ASSET',
+                  assetResult.optisignsId,
+                  {
+                    priority: optisignsConfig.takeover?.priority || 'HIGH',
+                    duration: optisignsConfig.takeover?.duration || 30,
+                    message: `Webhook announcement: ${contentProject.name}`,
+                    initiatedBy: 'webhook_announcement'
+                  }
+                );
+                
+                console.log(`🎯 ✅ Takeover fallback successful for ${display.name}!`);
+                publishResults.successCount++;
+                publishResults.displayResults.push({
+                  displayId: display.id,
+                  displayName: display.name,
+                  status: 'success',
+                  assetId: assetResult.optisignsId,
+                  takeoverResult: takeoverResult,
+                  method: 'takeoverDevice'
+                });
+                break;
+                
+              } catch (takeoverError) {
+                throw new Error(`Both pushContent and takeover failed. Last error: ${takeoverError.message}`);
+              }
+            }
+            
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, 1500 * retryCount));
+          }
+        }
+        
+      } catch (displayError) {
+        console.error(`❌ Failed to publish to display ${display.name}:`, displayError.message);
+        
+        publishResults.failedCount++;
+        publishResults.errors.push({
+          stage: 'display_publishing',
+          error: displayError.message,
+          displayId: display.id,
+          displayName: display.name,
+          optisignsDisplayId: display.optisignsDisplayId,
+          uuid: display.uuid
+        });
+        
+        publishResults.displayResults.push({
+          displayId: display.id,
+          displayName: display.name,
+          status: 'failed',
+          error: displayError.message
+        });
+      }
+    }
+
+    return publishResults;
+  }
+
+  /**
+   * Debug display selection to help troubleshoot targeting issues
+   */
+  async debugDisplaySelection(tenantId, displaySelection) {
+    try {
+      console.log('🔍 Debug: Display selection configuration:', JSON.stringify(displaySelection, null, 2));
+      
+      if (!this.models.OptisignsDisplay) {
+        console.log('❌ Debug: OptisignsDisplay model not available');
+        return;
+      }
+
+      // Check all displays for this tenant
+      const allDisplays = await this.models.OptisignsDisplay.findAll({
+        where: { tenantId: tenantId.toString() }
+      });
+      
+      console.log(`📊 Debug: Total displays in database: ${allDisplays.length}`);
+      
+      if (allDisplays.length > 0) {
+        const activeDisplays = allDisplays.filter(d => d.isActive);
+        const onlineDisplays = allDisplays.filter(d => d.isOnline);
+        const activeAndOnline = allDisplays.filter(d => d.isActive && d.isOnline);
+        const withOptisignsId = allDisplays.filter(d => d.optisignsDisplayId && d.optisignsDisplayId !== 'null');
+        const withUuid = allDisplays.filter(d => d.uuid && d.uuid !== 'null');
+        
+        console.log(`📊 Debug: Active displays: ${activeDisplays.length}`);
+        console.log(`📊 Debug: Online displays: ${onlineDisplays.length}`);
+        console.log(`📊 Debug: Active AND Online displays: ${activeAndOnline.length}`);
+        console.log(`📊 Debug: Displays with OptiSigns ID: ${withOptisignsId.length}`);
+        console.log(`📊 Debug: Displays with UUID: ${withUuid.length}`);
+        
+        // Show sample display data with IDs
+        console.log('📋 Debug: Sample display statuses:');
+        allDisplays.slice(0, 5).forEach(display => {
+          console.log(`  - ${display.name} (ID: ${display.id}): active=${display.isActive}, online=${display.isOnline}, location=${display.location}, optisignsId=${display.optisignsDisplayId}, uuid=${display.uuid}`);
+        });
+        
+        // Check against display selection criteria
+        const mode = displaySelection?.mode || 'all';
+        console.log(`🎯 Debug: Display selection mode: ${mode}`);
+        
+        switch (mode) {
+          case 'all':
+            console.log('🔍 Debug: Mode is "all", should target all active & online displays');
+            console.log(`📋 Debug: Available active & online display IDs:`, 
+              activeAndOnline.map(d => d.id)
+            );
+            break;
+          case 'specific':
+            console.log('🔍 Debug: Mode is "specific", target IDs:', displaySelection?.displayIds);
+            console.log(`📋 Debug: Available display IDs in database:`, 
+              allDisplays.map(d => d.id)
+            );
+            
+            // Check if target IDs exist
+            if (displaySelection?.displayIds) {
+              const missingIds = displaySelection.displayIds.filter(targetId => 
+                !allDisplays.some(display => display.id === targetId)
+              );
+              if (missingIds.length > 0) {
+                console.log(`❌ Debug: Missing display IDs:`, missingIds);
+                console.log(`💡 Debug: These display IDs don't exist in the database`);
+              }
+              
+              const foundIds = displaySelection.displayIds.filter(targetId => 
+                allDisplays.some(display => display.id === targetId)
+              );
+              if (foundIds.length > 0) {
+                console.log(`✅ Debug: Found display IDs:`, foundIds);
+                const foundDisplays = allDisplays.filter(d => foundIds.includes(d.id));
+                foundDisplays.forEach(display => {
+                  console.log(`  - ${display.name} (${display.id}): active=${display.isActive}, online=${display.isOnline}, optisignsId=${display.optisignsDisplayId}`);
+                });
+              }
+            }
+            break;
+          case 'group':
+            console.log('🔍 Debug: Mode is "group", target locations:', displaySelection?.displayGroups);
+            const uniqueLocations = [...new Set(allDisplays.map(d => d.location).filter(Boolean))];
+            console.log('📍 Debug: Available locations:', uniqueLocations);
+            
+            if (displaySelection?.displayGroups) {
+              displaySelection.displayGroups.forEach(targetLocation => {
+                const displaysInLocation = allDisplays.filter(d => d.location === targetLocation);
+                console.log(`📍 Debug: Displays in "${targetLocation}": ${displaysInLocation.length}`, 
+                  displaysInLocation.map(d => `${d.name} (${d.id})`)
+                );
+              });
+            }
+            break;
+          case 'conditional':
+            console.log('🔍 Debug: Mode is "conditional", rules:', displaySelection?.conditionalRules);
+            break;
+        }
+      } else {
+        console.log('❌ Debug: No displays found in database for this tenant');
+        console.log('💡 Debug: Make sure to sync displays from OptiSigns first');
+      }
+    } catch (error) {
+      console.error('❌ Debug: Error in display selection debugging:', error);
+    }
+  }
+
+  /**
+   * Extract variables from announcement webhook payload WITH ENHANCED PHOTO SUPPORT
    */
   async extractAnnouncementVariablesWithPhoto(contentCreatorConfig, payload, tenantId) {
     const variables = {};
@@ -576,36 +880,69 @@ class WebhookService {
       }
     }
     
-    // Look up sales rep photo if email is available
-    if (variables.rep_email || payload.rep_email || payload.email) {
-      const repEmail = variables.rep_email || payload.rep_email || payload.email;
+    // Enhanced sales rep photo lookup with multiple fallback strategies
+    console.log('🔍 Starting sales rep photo lookup...');
+    const emailSources = [
+      variables.rep_email,
+      payload.rep_email, 
+      payload.email,
+      payload.salesRep?.email,
+      payload.representative?.email,
+      payload.agent?.email
+    ].filter(Boolean);
+    
+    console.log('📧 Email sources found:', emailSources);
+    
+    if (emailSources.length > 0) {
+      let photoFound = false;
       
-      try {
-        const repPhoto = await this.getSalesRepPhoto(tenantId, repEmail);
-        if (repPhoto) {
-          variables.rep_photo = repPhoto.url;
-          variables.rep_photo_id = repPhoto.id;
-          console.log(`✅ Found sales rep photo for ${repEmail}`);
-        } else {
-          // Use fallback photo
+      // Try each email source
+      for (const repEmail of emailSources) {
+        console.log(`🔍 Trying to find photo for: ${repEmail}`);
+        
+        try {
+          const repPhoto = await this.getSalesRepPhoto(tenantId, repEmail);
+          if (repPhoto && repPhoto.id) {
+            variables.rep_photo = repPhoto.url;
+            variables.rep_photo_id = repPhoto.id;
+            console.log(`✅ Found sales rep photo for ${repEmail}: ${repPhoto.id}`);
+            photoFound = true;
+            break;
+          }
+        } catch (error) {
+          console.error(`❌ Error fetching photo for ${repEmail}:`, error.message);
+        }
+      }
+      
+      // If no photo found, use fallback
+      if (!photoFound) {
+        console.log('🔄 No photo found, trying fallback...');
+        try {
           const fallbackPhoto = await this.getFallbackPhoto(tenantId);
           if (fallbackPhoto) {
             variables.rep_photo = fallbackPhoto.url;
             variables.rep_photo_id = fallbackPhoto.id;
             if (fallbackPhoto.id) {
-              console.log(`📷 Using fallback photo for ${repEmail}`);
+              console.log(`📷 Using configured fallback photo: ${fallbackPhoto.id}`);
             } else {
-              console.log(`📷 Using default placeholder photo for ${repEmail}`);
+              console.log(`📷 Using default placeholder photo`);
             }
           } else {
+            variables.rep_photo = DEFAULT_FALLBACK_PHOTO;
+            variables.rep_photo_id = null;
             missing.push('rep_photo');
-            console.log(`❌ No photo found for ${repEmail}`);
+            console.log(`❌ No fallback photo configured, using placeholder`);
           }
+        } catch (error) {
+          console.error('❌ Error fetching fallback photo:', error);
+          variables.rep_photo = DEFAULT_FALLBACK_PHOTO;
+          variables.rep_photo_id = null;
+          missing.push('rep_photo');
         }
-      } catch (error) {
-        console.error('Error fetching sales rep photo:', error);
-        missing.push('rep_photo');
       }
+    } else {
+      console.log('❌ No email found in payload for photo lookup');
+      missing.push('rep_photo');
     }
     
     // Add system variables
@@ -617,94 +954,336 @@ class WebhookService {
   }
 
   /**
-   * Get sales rep photo from content assets
+   * Enhanced sales rep photo lookup with better debugging and database error handling
    */
   async getSalesRepPhoto(tenantId, email) {
-    const normalizedEmail = email.toLowerCase();
+    const normalizedEmail = email.toLowerCase().trim();
     try {
-      // Search for photo in Sales Reps folder
+      console.log(`🔍 Looking for sales rep photo for: ${normalizedEmail}`);
+      
       const sequelize = this.models.ContentAsset.sequelize;
-      const asset = await this.models.ContentAsset.findOne({
-        where: {
-          tenantId,
-          categories: {
-            [Op.contains]: ['Sales Reps']
-          },
-          processingStatus: 'completed',
-          [Op.and]: [
-            sequelize.literal(`metadata->>'repEmail' = :email`)
-          ]
-        },
-        replacements: { email: normalizedEmail },
-        order: [['createdAt', 'DESC']]
-      });
+      
+      // Try array-based query first, fallback to string-based if database doesn't support arrays
+      let results = null;
+      
+      try {
+        // Primary query with array operations (for properly configured databases)
+        const [primaryResults] = await sequelize.query(`
+          SELECT 
+            id, 
+            public_url, 
+            thumbnail_url, 
+            file_path,
+            name,
+            metadata,
+            categories
+          FROM content_assets 
+          WHERE 
+            tenant_id = $1
+            AND processing_status = 'completed'
+            AND (
+              LOWER(metadata->>'repEmail') = $2
+              OR LOWER(metadata->>'rep_email') = $2
+              OR LOWER(metadata->>'email') = $2
+              OR LOWER(metadata->>'salesRepEmail') = $2
+            )
+            AND (
+              categories @> ARRAY['Sales Reps']::text[]
+              OR categories @> ARRAY['sales_reps']::text[]
+              OR categories @> ARRAY['sales-reps']::text[]
+              OR categories @> ARRAY['Sales Rep']::text[]
+              OR categories @> ARRAY['sales_rep']::text[]
+              OR categories @> ARRAY['salesrep']::text[]
+              OR categories @> ARRAY['SalesRep']::text[]
+            )
+          ORDER BY created_at DESC 
+          LIMIT 1
+        `, {
+          bind: [tenantId.toString(), normalizedEmail],
+          type: sequelize.QueryTypes.SELECT
+        });
+        
+        results = primaryResults;
+        console.log('✅ Used array-based category query');
+        
+      } catch (arrayQueryError) {
+        console.warn('⚠️ Array-based query failed, trying string fallback:', arrayQueryError.message);
+        
+        // Fallback query for databases where categories is not text[] type
+        const [fallbackResults] = await sequelize.query(`
+          SELECT 
+            id, 
+            public_url, 
+            thumbnail_url, 
+            file_path,
+            name,
+            metadata,
+            categories
+          FROM content_assets 
+          WHERE 
+            tenant_id = $1
+            AND processing_status = 'completed'
+            AND (
+              LOWER(metadata->>'repEmail') = $2
+              OR LOWER(metadata->>'rep_email') = $2
+              OR LOWER(metadata->>'email') = $2
+              OR LOWER(metadata->>'salesRepEmail') = $2
+            )
+            AND (
+              LOWER(categories::text) LIKE '%sales rep%'
+              OR LOWER(categories::text) LIKE '%sales_rep%'
+              OR LOWER(categories::text) LIKE '%sales-rep%'
+              OR LOWER(categories::text) LIKE '%salesrep%'
+            )
+          ORDER BY created_at DESC 
+          LIMIT 1
+        `, {
+          bind: [tenantId.toString(), normalizedEmail],
+          type: sequelize.QueryTypes.SELECT
+        });
+        
+        results = fallbackResults;
+        console.log('✅ Used string-based fallback category query');
+      }
 
-      if (asset) {
-        // Ensure the photo has a persistent public URL
-        if (!asset.publicUrl && asset.filePath) {
+      if (results && results.length > 0) {
+        const asset = results[0];
+        console.log(`✅ Found sales rep photo: ${asset.name} (ID: ${asset.id})`);
+        console.log(`📋 Photo metadata:`, asset.metadata);
+        console.log(`🏷️ Photo categories:`, asset.categories);
+        
+        let publicUrl = asset.public_url;
+        if (!publicUrl && asset.file_path) {
           const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
-          const fileName = path.basename(asset.filePath);
-          const publicUrl = `${baseUrl}/uploads/content/assets/${fileName}`;
-          await asset.update({ publicUrl });
-          asset.publicUrl = publicUrl;
+          const fileName = path.basename(asset.file_path);
+          publicUrl = `${baseUrl}/uploads/content/assets/${fileName}`;
+          
+          // Update the public_url in database
+          try {
+            await sequelize.query(`
+              UPDATE content_assets 
+              SET public_url = $1 
+              WHERE id = $2
+            `, {
+              bind: [publicUrl, asset.id]
+            });
+            console.log(`🔗 Generated public URL: ${publicUrl}`);
+          } catch (updateError) {
+            console.warn('⚠️ Could not update public URL in database:', updateError.message);
+          }
         }
 
         return {
           id: asset.id,
-          url: asset.publicUrl || asset.url,
-          thumbnailUrl: asset.thumbnailUrl
+          url: publicUrl,
+          thumbnailUrl: asset.thumbnail_url
         };
       }
 
+      // Enhanced debugging - show what photos exist with proper error handling
+      await this.debugAvailablePhotos(sequelize, tenantId, normalizedEmail);
+      
       return null;
+      
     } catch (error) {
-      console.error('Error fetching sales rep photo:', error);
+      console.error('❌ Error fetching sales rep photo:', error.message);
+      
+      // If it's a database type error, provide helpful information
+      if (error.message.includes('operator does not exist') || error.message.includes('text[] && character varying[]')) {
+        console.error('💡 Database type error detected. This may be due to categories column type mismatch.');
+        console.error('💡 Run this SQL to fix: ALTER TABLE content_assets ALTER COLUMN categories TYPE text[] USING categories::text[];');
+      }
+      
       return null;
     }
   }
 
   /**
-   * Get fallback photo for tenant
+   * Debug available photos with fallback queries
+   */
+  async debugAvailablePhotos(sequelize, tenantId, normalizedEmail) {
+    try {
+      console.log(`❌ No sales rep photo found for: ${normalizedEmail}`);
+      
+      // Try to list available photos with fallback query
+      try {
+        // Try array-based query first
+        const [allPhotos] = await sequelize.query(`
+          SELECT 
+            id, 
+            name,
+            metadata->>'repEmail' as rep_email,
+            metadata->>'email' as email,
+            categories
+          FROM content_assets 
+          WHERE 
+            tenant_id = $1
+            AND processing_status = 'completed'
+            AND (
+              categories @> ARRAY['Sales Reps']::text[]
+              OR categories @> ARRAY['sales_reps']::text[]
+              OR categories @> ARRAY['sales-reps']::text[]
+              OR categories @> ARRAY['Sales Rep']::text[]
+              OR categories @> ARRAY['sales_rep']::text[]
+            )
+          ORDER BY created_at DESC 
+          LIMIT 10
+        `, {
+          bind: [tenantId.toString()],
+          type: sequelize.QueryTypes.SELECT
+        });
+
+        if (allPhotos && Array.isArray(allPhotos) && allPhotos.length > 0) {
+          console.log(`📋 Available sales rep photos (${allPhotos.length}):`, 
+            allPhotos.map(p => ({ 
+              id: p.id, 
+              name: p.name, 
+              repEmail: p.rep_email || p.email,
+              categories: p.categories 
+            }))
+          );
+        } else {
+          console.log(`📋 No sales rep photos found in database for tenant ${tenantId}`);
+        }
+        
+      } catch (debugArrayError) {
+        console.warn('⚠️ Array debug query failed, trying string fallback...');
+        
+        // Fallback debug query
+        const [allPhotos] = await sequelize.query(`
+          SELECT 
+            id, 
+            name,
+            metadata->>'repEmail' as rep_email,
+            metadata->>'email' as email,
+            categories
+          FROM content_assets 
+          WHERE 
+            tenant_id = $1
+            AND processing_status = 'completed'
+            AND (
+              LOWER(categories::text) LIKE '%sales rep%'
+              OR LOWER(categories::text) LIKE '%sales_rep%'
+              OR LOWER(categories::text) LIKE '%sales-rep%'
+              OR LOWER(categories::text) LIKE '%salesrep%'
+            )
+          ORDER BY created_at DESC 
+          LIMIT 10
+        `, {
+          bind: [tenantId.toString()],
+          type: sequelize.QueryTypes.SELECT
+        });
+
+        if (allPhotos && Array.isArray(allPhotos) && allPhotos.length > 0) {
+          console.log(`📋 Available sales rep photos (${allPhotos.length}) [fallback query]:`, 
+            allPhotos.map(p => ({ 
+              id: p.id, 
+              name: p.name, 
+              repEmail: p.rep_email || p.email,
+              categories: p.categories 
+            }))
+          );
+        } else {
+          console.log(`📋 No sales rep photos found in database for tenant ${tenantId} [fallback query]`);
+        }
+      }
+      
+    } catch (debugError) {
+      console.error('❌ Error in debug photo listing:', debugError.message);
+      console.log(`📋 Could not list available photos due to database error`);
+    }
+  }
+
+  /**
+   * Enhanced fallback photo lookup with proper error handling
    */
   async getFallbackPhoto(tenantId) {
     try {
-      // Look for fallback photo in tenant settings or designated asset
-      const fallbackAsset = await this.models.ContentAsset.findOne({
-          where: {
-            tenantId,
-            metadata: {
-              [Op.jsonSupersetOf]: { isFallbackPhoto: true }
-            },
-            processingStatus: 'completed'
-        }
+      console.log(`🔍 Looking for fallback photo for tenant: ${tenantId}`);
+      
+      const sequelize = this.models.ContentAsset.sequelize;
+      
+      const [results] = await sequelize.query(`
+        SELECT 
+          id, 
+          public_url, 
+          thumbnail_url, 
+          file_path,
+          name,
+          metadata
+        FROM content_assets 
+        WHERE 
+          tenant_id = $1
+          AND processing_status = 'completed'
+          AND (
+            metadata->>'isFallbackPhoto' = 'true'
+            OR metadata->>'is_fallback_photo' = 'true'
+            OR metadata->>'fallback' = 'true'
+            OR LOWER(name) LIKE '%fallback%'
+            OR LOWER(name) LIKE '%default%'
+          )
+        ORDER BY 
+          CASE WHEN metadata->>'isFallbackPhoto' = 'true' THEN 1 ELSE 2 END,
+          created_at DESC 
+        LIMIT 1
+      `, {
+        bind: [tenantId.toString()],
+        type: sequelize.QueryTypes.SELECT
       });
 
-      if (fallbackAsset) {
-        // Ensure fallback photo has a persistent public URL
-        if (!fallbackAsset.publicUrl && fallbackAsset.filePath) {
+      if (results && results.length > 0) {
+        const asset = results[0];
+        console.log(`✅ Found fallback photo: ${asset.name} (ID: ${asset.id})`);
+        
+        let publicUrl = asset.public_url;
+        if (!publicUrl && asset.file_path) {
           const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
-          const fileName = path.basename(fallbackAsset.filePath);
-          const publicUrl = `${baseUrl}/uploads/content/assets/${fileName}`;
-          await fallbackAsset.update({ publicUrl });
-          fallbackAsset.publicUrl = publicUrl;
+          const fileName = path.basename(asset.file_path);
+          publicUrl = `${baseUrl}/uploads/content/assets/${fileName}`;
+          
+          try {
+            await sequelize.query(`
+              UPDATE content_assets 
+              SET public_url = $1 
+              WHERE id = $2
+            `, {
+              bind: [publicUrl, asset.id]
+            });
+            console.log(`🔗 Generated and saved public URL: ${publicUrl}`);
+          } catch (updateError) {
+            console.warn('⚠️ Could not update fallback photo URL in database:', updateError.message);
+          }
         }
 
         return {
-          id: fallbackAsset.id,
-          url: fallbackAsset.publicUrl || fallbackAsset.url,
-          thumbnailUrl: fallbackAsset.thumbnailUrl
+          id: asset.id,
+          url: publicUrl,
+          thumbnailUrl: asset.thumbnail_url
         };
       }
 
-      // Use a built-in placeholder when no fallback asset exists
+      // Use built-in placeholder when no fallback asset exists
+      console.log(`📷 No fallback photo configured for tenant ${tenantId}, using default placeholder`);
       return {
         id: null,
         url: DEFAULT_FALLBACK_PHOTO,
         thumbnailUrl: DEFAULT_FALLBACK_PHOTO
       };
+      
     } catch (error) {
-      console.error('Error fetching fallback photo:', error);
-      return null;
+      console.error('❌ Error fetching fallback photo:', error.message);
+      
+      // If it's a database error, provide helpful information
+      if (error.message.includes('relation') && error.message.includes('does not exist')) {
+        console.error('💡 Database table error detected. Make sure content_assets table exists.');
+      }
+      
+      // Always return default placeholder on error
+      return {
+        id: null,
+        url: DEFAULT_FALLBACK_PHOTO,
+        thumbnailUrl: DEFAULT_FALLBACK_PHOTO
+      };
     }
   }
 
@@ -769,6 +1348,7 @@ class WebhookService {
       throw error;
     }
   }
+
   /**
    * Check announcement trigger conditions
    */
@@ -860,7 +1440,6 @@ class WebhookService {
     return { variables, missing };
   }
 
-  
   /**
    * Interpolate variables in a string
    */
@@ -872,70 +1451,142 @@ class WebhookService {
   }
 
   /**
-   * Get target displays for announcement
+   * Get target displays for announcement with enhanced debugging and fallback logic
    */
   async getAnnouncementTargetDisplays(tenantId, displaySelection, payload) {
     const { mode, displayIds, displayGroups, conditionalRules } = displaySelection;
     
     let targetDisplays = [];
     
-    switch (mode) {
-      case 'all':
-        // Get all active displays
-        targetDisplays = await this.models.OptisignsDisplay.findAll({
-          where: {
-            tenantId: tenantId.toString(),
-            isActive: true,
-            isOnline: true
-          }
-        });
-        break;
-        
-      case 'specific':
-        // Get specific displays by ID
-        if (displayIds && displayIds.length > 0) {
+    try {
+      console.log(`🔍 Display selection mode: ${mode}`);
+      
+      switch (mode) {
+        case 'all':
+          // Get all active and online displays
+          console.log('🔍 Fetching all active and online displays...');
           targetDisplays = await this.models.OptisignsDisplay.findAll({
             where: {
-              id: { [Op.in]: displayIds },
-              tenantId: tenantId.toString(),
-              isActive: true
-            }
-          });
-        }
-        break;
-        
-      case 'group':
-        // Get displays by group/location
-        if (displayGroups && displayGroups.length > 0) {
-          targetDisplays = await this.models.OptisignsDisplay.findAll({
-            where: {
-              location: { [Op.in]: displayGroups },
               tenantId: tenantId.toString(),
               isActive: true,
               isOnline: true
             }
           });
-        }
-        break;
-        
-      case 'conditional':
-        // Apply conditional rules based on payload
-        if (conditionalRules?.enabled && conditionalRules.conditions) {
-          for (const rule of conditionalRules.conditions) {
-            const fieldValue = this.getNestedValue(payload, rule.field);
-            if (this.evaluateCondition(fieldValue, rule.operator, rule.value)) {
-              const displays = await this.models.OptisignsDisplay.findAll({
+          console.log(`📊 Found ${targetDisplays.length} active & online displays`);
+          break;
+          
+        case 'specific':
+          // Get specific displays by ID with enhanced fallback logic
+          console.log('🔍 Fetching specific displays by ID:', displayIds);
+          if (displayIds && displayIds.length > 0) {
+            targetDisplays = await this.models.OptisignsDisplay.findAll({
+              where: {
+                id: { [Op.in]: displayIds },
+                tenantId: tenantId.toString(),
+                isActive: true
+              }
+            });
+            console.log(`📊 Found ${targetDisplays.length} specific displays out of ${displayIds.length} requested`);
+            
+            // If no specific displays found, check if any displays exist and offer fallback
+            if (targetDisplays.length === 0) {
+              console.log('❌ No specific displays found, checking if any displays exist...');
+              
+              const allDisplays = await this.models.OptisignsDisplay.findAll({
                 where: {
-                  id: { [Op.in]: rule.displayIds },
                   tenantId: tenantId.toString(),
-                  isActive: true
+                  isActive: true,
+                  isOnline: true
                 }
               });
-              targetDisplays.push(...displays);
+              
+              if (allDisplays.length > 0) {
+                console.log(`💡 Found ${allDisplays.length} other active displays. Consider updating the webhook configuration with valid display IDs.`);
+                console.log(`📋 Available display IDs:`, allDisplays.map(d => `${d.name} (${d.id})`));
+                
+                // Optional: Enable fallback to all displays when specific ones aren't found
+                // Uncomment the next two lines to enable this fallback behavior
+                // console.log('🔄 Falling back to all active displays...');
+                // targetDisplays = allDisplays;
+              } else {
+                console.log('❌ No active displays found at all');
+              }
             }
+          } else {
+            console.log('❌ No display IDs provided for specific mode');
           }
-        }
-        break;
+          break;
+          
+        case 'group':
+          // Get displays by group/location
+          console.log('🔍 Fetching displays by location:', displayGroups);
+          if (displayGroups && displayGroups.length > 0) {
+            targetDisplays = await this.models.OptisignsDisplay.findAll({
+              where: {
+                location: { [Op.in]: displayGroups },
+                tenantId: tenantId.toString(),
+                isActive: true,
+                isOnline: true
+              }
+            });
+            console.log(`📊 Found ${targetDisplays.length} displays in specified locations`);
+            
+            // If no displays found in specified locations, show what locations are available
+            if (targetDisplays.length === 0) {
+              const allDisplays = await this.models.OptisignsDisplay.findAll({
+                where: { tenantId: tenantId.toString() }
+              });
+              const availableLocations = [...new Set(allDisplays.map(d => d.location).filter(Boolean))];
+              console.log(`💡 No displays found in specified locations. Available locations:`, availableLocations);
+            }
+          } else {
+            console.log('❌ No display groups provided for group mode');
+          }
+          break;
+          
+        case 'conditional':
+          // Apply conditional rules based on payload
+          console.log('🔍 Applying conditional rules...');
+          if (conditionalRules?.enabled && conditionalRules.conditions) {
+            for (const rule of conditionalRules.conditions) {
+              const fieldValue = this.getNestedValue(payload, rule.field);
+              console.log(`🔍 Checking condition: ${rule.field} ${rule.operator} ${rule.value} (payload value: ${fieldValue})`);
+              
+              if (this.evaluateCondition(fieldValue, rule.operator, rule.value)) {
+                console.log(`✅ Condition matched, adding displays:`, rule.displayIds);
+                const displays = await this.models.OptisignsDisplay.findAll({
+                  where: {
+                    id: { [Op.in]: rule.displayIds },
+                    tenantId: tenantId.toString(),
+                    isActive: true
+                  }
+                });
+                targetDisplays.push(...displays);
+              } else {
+                console.log(`❌ Condition not matched`);
+              }
+            }
+          } else {
+            console.log('❌ No conditional rules configured');
+          }
+          break;
+          
+        default:
+          console.log(`❌ Unknown display selection mode: ${mode}`);
+          // Fallback to all displays for unknown modes
+          console.log('🔄 Falling back to all active displays...');
+          targetDisplays = await this.models.OptisignsDisplay.findAll({
+            where: {
+              tenantId: tenantId.toString(),
+              isActive: true,
+              isOnline: true
+            }
+          });
+      }
+    } catch (error) {
+      console.error('❌ Error querying displays:', error);
+      // If there's a database error, return empty array
+      return [];
     }
     
     // Remove duplicates
@@ -947,6 +1598,17 @@ class WebhookService {
         seenIds.add(display.id);
         uniqueDisplays.push(display);
       }
+    }
+    
+    console.log(`🎯 Final target displays after deduplication: ${uniqueDisplays.length}`);
+    
+    // Enhanced logging when no displays are found
+    if (uniqueDisplays.length === 0) {
+      console.log('⚠️ No displays targeted. Recommendations:');
+      console.log('   1. Check display selection mode and criteria');
+      console.log('   2. Verify display IDs exist in database');
+      console.log('   3. Ensure displays are active and online');
+      console.log('   4. Consider using "all" mode for testing');
     }
     
     return uniqueDisplays;
@@ -1189,6 +1851,113 @@ class WebhookService {
         success: false,
         error: error.message
       };
+    }
+  }
+
+  /**
+   * MISSING METHOD - Check and resume leads (for scheduled task)
+   */
+  async checkAndResumeLeads() {
+    try {
+      console.log('🔄 Checking leads that need to be resumed...');
+      
+      // Implementation would check for paused leads with resume conditions
+      // This is a placeholder implementation
+      let resumedCount = 0;
+      
+      // Check for paused leads that should be resumed based on time or conditions
+      if (this.models.Lead) {
+        const pausedLeads = await this.models.Lead.findAll({
+          where: {
+            status: 'paused',
+            // Add conditions for leads that should be resumed
+          },
+          limit: 100
+        });
+        
+        console.log(`📊 Found ${pausedLeads.length} paused leads to check`);
+        
+        for (const lead of pausedLeads) {
+          try {
+            // Check resume conditions here
+            // For now, just log
+            console.log(`🔍 Checking resume conditions for lead ${lead.id}`);
+            
+            // Implementation would check specific resume triggers
+            // and update lead status accordingly
+            
+          } catch (leadError) {
+            console.error(`❌ Error checking resume conditions for lead ${lead.id}:`, leadError);
+          }
+        }
+      }
+      
+      console.log(`✅ Resume check completed. ${resumedCount} leads resumed.`);
+      return resumedCount;
+      
+    } catch (error) {
+      console.error('❌ Error in checkAndResumeLeads:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Database maintenance helper - Fix categories column type issues
+   * This can be called during startup to fix common database type mismatches
+   */
+  async fixCategoriesColumnType() {
+    try {
+      if (!this.models.ContentAsset) {
+        console.log('⚠️ ContentAsset model not available, skipping categories column fix');
+        return false;
+      }
+
+      const sequelize = this.models.ContentAsset.sequelize;
+      
+      // Check current column type
+      const [columnInfo] = await sequelize.query(`
+        SELECT column_name, data_type, udt_name
+        FROM information_schema.columns 
+        WHERE table_name = 'content_assets' 
+        AND column_name = 'categories';
+      `, {
+        type: sequelize.QueryTypes.SELECT
+      });
+
+      if (columnInfo) {
+        console.log(`📋 Categories column info:`, columnInfo);
+        
+        // If it's not already text[], convert it
+        if (columnInfo.udt_name !== '_text') {
+          console.log('🔧 Converting categories column to text[] type...');
+          
+          await sequelize.query(`
+            ALTER TABLE content_assets 
+            ALTER COLUMN categories TYPE text[] 
+            USING categories::text[];
+          `);
+          
+          console.log('✅ Categories column converted to text[] successfully');
+          return true;
+        } else {
+          console.log('✅ Categories column is already text[] type');
+          return true;
+        }
+      } else {
+        console.log('❌ Categories column not found in content_assets table');
+        return false;
+      }
+      
+    } catch (error) {
+      console.error('❌ Error fixing categories column type:', error.message);
+      
+      // Provide helpful SQL commands for manual execution
+      if (error.message.includes('permission denied') || error.message.includes('must be owner')) {
+        console.log('💡 Run this SQL manually as database owner:');
+        console.log('   ALTER TABLE content_assets ALTER COLUMN categories TYPE text[] USING categories::text[];');
+      }
+      
+      return false;
     }
   }
 

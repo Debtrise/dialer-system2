@@ -1,5 +1,5 @@
 // user-routes.js
-// Comprehensive user management routes
+// Comprehensive user management routes - FIXED VERSION
 
 const express = require('express');
 const bcrypt = require('bcrypt');
@@ -72,7 +72,8 @@ module.exports = function(app, sequelize, authenticateToken) {
   // Get user by ID (admin only, or user viewing their own profile)
   router.get('/users/:id', authenticateToken, async (req, res) => {
     try {
-      const userId = req.params.id;
+      // Handle 'me' parameter first - convert to actual user ID
+      const userId = req.params.id === 'me' ? req.user.id : req.params.id;
       const requesterId = req.user.id;
       const requesterRole = req.user.role;
       const tenantId = req.user.tenantId;
@@ -82,12 +83,9 @@ module.exports = function(app, sequelize, authenticateToken) {
         return res.status(403).json({ error: 'Access denied' });
       }
       
-      const user = await User.findOne({
-        where: { 
-          id: userId,
-          tenantId 
-        },
-        attributes: { exclude: ['password'] }
+      const user = await User.findOne({ 
+        where: { id: userId, tenantId: tenantId },
+        attributes: { exclude: ['password'] } // Never send passwords
       });
       
       if (!user) {
@@ -115,7 +113,7 @@ module.exports = function(app, sequelize, authenticateToken) {
       res.status(500).json({ error: error.message });
     }
   });
-  
+
   // Create new user (admin only)
   router.post('/users', authenticateToken, async (req, res) => {
     try {
@@ -192,7 +190,8 @@ module.exports = function(app, sequelize, authenticateToken) {
   // Update user (admin only, or user updating their own profile)
   router.put('/users/:id', authenticateToken, async (req, res) => {
     try {
-      const userId = req.params.id;
+      // Handle 'me' parameter first - convert to actual user ID
+      const userId = req.params.id === 'me' ? req.user.id : req.params.id;
       const requesterId = req.user.id;
       const requesterRole = req.user.role;
       const tenantId = req.user.tenantId;
@@ -214,7 +213,7 @@ module.exports = function(app, sequelize, authenticateToken) {
         return res.status(404).json({ error: 'User not found' });
       }
       
-      const { email, role, isActive } = req.body;
+      const { email, role, isActive, firstName, lastName, phone, timezone, preferences } = req.body;
       const updates = {};
       
       // Email update
@@ -262,6 +261,13 @@ module.exports = function(app, sequelize, authenticateToken) {
         updates.isActive = isActive;
       }
       
+      // Profile fields (users can update their own, admins can update anyone's)
+      if (firstName !== undefined) updates.firstName = firstName;
+      if (lastName !== undefined) updates.lastName = lastName;
+      if (phone !== undefined) updates.phone = phone;
+      if (timezone !== undefined) updates.timezone = timezone;
+      if (preferences !== undefined) updates.preferences = preferences;
+      
       // Prevent admins from deactivating themselves
       if (isActive === false && parseInt(userId) === requesterId) {
         return res.status(400).json({ error: 'You cannot deactivate your own account' });
@@ -289,7 +295,8 @@ module.exports = function(app, sequelize, authenticateToken) {
         return res.status(403).json({ error: 'Access denied. Admin role required.' });
       }
       
-      const userId = req.params.id;
+      // Handle 'me' parameter first - convert to actual user ID
+      const userId = req.params.id === 'me' ? req.user.id : req.params.id;
       const requesterId = req.user.id;
       const tenantId = req.user.tenantId;
       
@@ -382,11 +389,11 @@ module.exports = function(app, sequelize, authenticateToken) {
       }
       
       // Profile fields
-      if (firstName) updates.firstName = firstName;
-      if (lastName) updates.lastName = lastName;
-      if (phone) updates.phone = phone;
-      if (timezone) updates.timezone = timezone;
-      if (preferences) updates.preferences = preferences;
+      if (firstName !== undefined) updates.firstName = firstName;
+      if (lastName !== undefined) updates.lastName = lastName;
+      if (phone !== undefined) updates.phone = phone;
+      if (timezone !== undefined) updates.timezone = timezone;
+      if (preferences !== undefined) updates.preferences = preferences;
       
       await user.update(updates);
       
@@ -459,7 +466,8 @@ module.exports = function(app, sequelize, authenticateToken) {
         return res.status(403).json({ error: 'Access denied. Admin role required.' });
       }
       
-      const userId = req.params.id;
+      // Handle 'me' parameter first - convert to actual user ID
+      const userId = req.params.id === 'me' ? req.user.id : req.params.id;
       const requesterId = req.user.id;
       const { isActive } = req.body;
       
@@ -549,6 +557,24 @@ module.exports = function(app, sequelize, authenticateToken) {
       });
     } catch (error) {
       console.error('Error getting user statistics:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Debug route to check current user info (temporary)
+  router.get('/users/debug/me', authenticateToken, async (req, res) => {
+    try {
+      res.json({
+        user: {
+          id: req.user.id,
+          role: req.user.role,
+          tenantId: req.user.tenantId,
+          username: req.user.username,
+          email: req.user.email
+        },
+        message: 'Debug info for current user'
+      });
+    } catch (error) {
       res.status(500).json({ error: error.message });
     }
   });
