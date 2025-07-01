@@ -1069,7 +1069,7 @@ const apiDeviceId = device.optisignsDisplayId || device.uuid; // CORRECT ORDER  
       }
 
       // Clear by setting empty values using updateDevice
-      const apiDeviceId = device.uuid || device.optisignsDisplayId;
+      const apiDeviceId = device.optisignsDisplayId || device.uuid;
       const result = await this.safeApiCall(() =>
         client.devices.updateDevice(
           apiDeviceId,
@@ -1143,7 +1143,7 @@ const apiDeviceId = device.optisignsDisplayId || device.uuid; // CORRECT ORDER  
       const client = await this.getClient(tenantId);
       
       try {
-        const apiDeviceId = device.uuid || device.optisignsDisplayId;
+        const apiDeviceId = device.optisignsDisplayId || device.uuid;
         console.log(`🚀 Using SDK updateDevice for takeover: device=${apiDeviceId}, content=${resolvedContent.optisignsId}, team=${effectiveTeamId}`);
 
         await this.safeApiCall(() =>
@@ -1488,7 +1488,7 @@ const apiDeviceId = device.optisignsDisplayId || device.uuid; // CORRECT ORDER  
           const teamId = config?.settings?.teamId || config?.settings?.defaultTeamId || null;
           
           // Use updateDevice to restore previous content
-          const apiDeviceId = device.uuid || device.optisignsDisplayId;
+          const apiDeviceId = device.optisignsDisplayId || device.uuid;
           await this.safeApiCall(() =>
             client.devices.updateDevice(
               apiDeviceId,
