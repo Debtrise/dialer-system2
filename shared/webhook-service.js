@@ -607,7 +607,7 @@ class WebhookService {
       console.log(`🔍 Display info:`, displayInfo);
 
       try {
-        // Validate display has OptiSigns ID - prioritize optisignsDisplayId over uuid
+        // Validate display has OptiSigns ID
         const optisignsApiId = display.optisignsDisplayId || display.uuid;
         if (!optisignsApiId || optisignsApiId === 'undefined' || optisignsApiId === 'null') {
           throw new Error(`Display missing OptiSigns API ID - optisignsDisplayId: "${display.optisignsDisplayId}", uuid: "${display.uuid}"`);
@@ -652,29 +652,34 @@ class WebhookService {
           }
         }
 
-        // Use direct pushContent method instead of takeoverDevice for better reliability
+        // Trigger takeover on the display using OptiSigns service with enhanced error handling
         retryCount = 0;
         while (retryCount < maxRetries) {
           try {
-            console.log(`🎯 Pushing content to display (attempt ${retryCount + 1}/${maxRetries})...`);
-            console.log(`📋 Push config:`, {
-              displayId: display.id,
-              optisignsApiId: optisignsApiId,
+            console.log(`🎯 Triggering takeover (attempt ${retryCount + 1}/${maxRetries})...`);
+            console.log(`📋 Takeover config:`, {
+              displayId: optisignsApiId,
               assetId: assetResult.optisignsId,
-              method: 'pushContent'
+              priority: optisignsConfig.takeover?.priority || 'NORMAL',
+              duration: optisignsConfig.takeover?.duration || 30
             });
             
-            // Use pushContent method which is more reliable for immediate content assignment
-            const pushResult = await this.optisignsService.pushContent(
+            // Use OptiSigns service takeoverDevice method
+            const takeoverResult = await this.optisignsService.takeoverDevice(
               tenantId,
               display.id, // Use local display ID
+              'ASSET',
               assetResult.optisignsId,
-              'NOW', // Schedule immediately
-              null // teamId - let service use default
+              {
+                priority: optisignsConfig.takeover?.priority || 'NORMAL',
+                duration: optisignsConfig.takeover?.duration || 30,
+                message: `Webhook announcement: ${contentProject.name}`,
+                initiatedBy: 'webhook_announcement'
+              }
             );
             
-            console.log(`🎯 ✅ Successfully pushed content to ${display.name}!`);
-            console.log(`📊 Push result:`, pushResult);
+            console.log(`🎯 ✅ Successfully triggered takeover on ${display.name}!`);
+            console.log(`📊 Takeover result:`, takeoverResult);
             
             publishResults.successCount++;
             publishResults.displayResults.push({
@@ -682,47 +687,16 @@ class WebhookService {
               displayName: display.name,
               status: 'success',
               assetId: assetResult.optisignsId,
-              pushResult: pushResult,
-              method: 'pushContent'
+              takeoverResult: takeoverResult
             });
             break;
             
-          } catch (pushError) {
+          } catch (takeoverError) {
             retryCount++;
-            console.error(`❌ Push attempt ${retryCount} failed for ${display.name}:`, pushError.message);
+            console.error(`❌ Takeover attempt ${retryCount} failed for ${display.name}:`, takeoverError.message);
             
-            // If pushContent fails, try takeoverDevice as fallback
-            if (retryCount === maxRetries) {
-              console.log(`🔄 Trying takeover method as fallback...`);
-              try {
-                const takeoverResult = await this.optisignsService.takeoverDevice(
-                  tenantId,
-                  display.id,
-                  'ASSET',
-                  assetResult.optisignsId,
-                  {
-                    priority: optisignsConfig.takeover?.priority || 'HIGH',
-                    duration: optisignsConfig.takeover?.duration || 30,
-                    message: `Webhook announcement: ${contentProject.name}`,
-                    initiatedBy: 'webhook_announcement'
-                  }
-                );
-                
-                console.log(`🎯 ✅ Takeover fallback successful for ${display.name}!`);
-                publishResults.successCount++;
-                publishResults.displayResults.push({
-                  displayId: display.id,
-                  displayName: display.name,
-                  status: 'success',
-                  assetId: assetResult.optisignsId,
-                  takeoverResult: takeoverResult,
-                  method: 'takeoverDevice'
-                });
-                break;
-                
-              } catch (takeoverError) {
-                throw new Error(`Both pushContent and takeover failed. Last error: ${takeoverError.message}`);
-              }
+            if (retryCount >= maxRetries) {
+              throw new Error(`Takeover failed after ${maxRetries} attempts: ${takeoverError.message}`);
             }
             
             // Wait before retry
@@ -954,7 +928,7 @@ class WebhookService {
   }
 
   /**
-   * Enhanced sales rep photo lookup with better debugging and database error handling
+   * Enhanced sales rep photo lookup with better debugging and error handling
    */
   async getSalesRepPhoto(tenantId, email) {
     const normalizedEmail = email.toLowerCase().trim();
@@ -963,88 +937,41 @@ class WebhookService {
       
       const sequelize = this.models.ContentAsset.sequelize;
       
-      // Try array-based query first, fallback to string-based if database doesn't support arrays
-      let results = null;
-      
-      try {
-        // Primary query with array operations (for properly configured databases)
-        const [primaryResults] = await sequelize.query(`
-          SELECT 
-            id, 
-            public_url, 
-            thumbnail_url, 
-            file_path,
-            name,
-            metadata,
-            categories
-          FROM content_assets 
-          WHERE 
-            tenant_id = $1
-            AND processing_status = 'completed'
-            AND (
-              LOWER(metadata->>'repEmail') = $2
-              OR LOWER(metadata->>'rep_email') = $2
-              OR LOWER(metadata->>'email') = $2
-              OR LOWER(metadata->>'salesRepEmail') = $2
-            )
-            AND (
-              categories @> ARRAY['Sales Reps']::text[]
-              OR categories @> ARRAY['sales_reps']::text[]
-              OR categories @> ARRAY['sales-reps']::text[]
-              OR categories @> ARRAY['Sales Rep']::text[]
-              OR categories @> ARRAY['sales_rep']::text[]
-              OR categories @> ARRAY['salesrep']::text[]
-              OR categories @> ARRAY['SalesRep']::text[]
-            )
-          ORDER BY created_at DESC 
-          LIMIT 1
-        `, {
-          bind: [tenantId.toString(), normalizedEmail],
-          type: sequelize.QueryTypes.SELECT
-        });
-        
-        results = primaryResults;
-        console.log('✅ Used array-based category query');
-        
-      } catch (arrayQueryError) {
-        console.warn('⚠️ Array-based query failed, trying string fallback:', arrayQueryError.message);
-        
-        // Fallback query for databases where categories is not text[] type
-        const [fallbackResults] = await sequelize.query(`
-          SELECT 
-            id, 
-            public_url, 
-            thumbnail_url, 
-            file_path,
-            name,
-            metadata,
-            categories
-          FROM content_assets 
-          WHERE 
-            tenant_id = $1
-            AND processing_status = 'completed'
-            AND (
-              LOWER(metadata->>'repEmail') = $2
-              OR LOWER(metadata->>'rep_email') = $2
-              OR LOWER(metadata->>'email') = $2
-              OR LOWER(metadata->>'salesRepEmail') = $2
-            )
-            AND (
-              LOWER(categories::text) LIKE '%sales rep%'
-              OR LOWER(categories::text) LIKE '%sales_rep%'
-              OR LOWER(categories::text) LIKE '%sales-rep%'
-              OR LOWER(categories::text) LIKE '%salesrep%'
-            )
-          ORDER BY created_at DESC 
-          LIMIT 1
-        `, {
-          bind: [tenantId.toString(), normalizedEmail],
-          type: sequelize.QueryTypes.SELECT
-        });
-        
-        results = fallbackResults;
-        console.log('✅ Used string-based fallback category query');
-      }
+      // Enhanced query with multiple email matching strategies and fixed type casting
+      const [results] = await sequelize.query(`
+        SELECT 
+          id, 
+          public_url, 
+          thumbnail_url, 
+          file_path,
+          name,
+          metadata,
+          categories
+        FROM content_assets 
+        WHERE 
+          tenant_id = $1
+          AND processing_status = 'completed'
+          AND (
+            LOWER(metadata->>'repEmail') = $2
+            OR LOWER(metadata->>'rep_email') = $2
+            OR LOWER(metadata->>'email') = $2
+            OR LOWER(metadata->>'salesRepEmail') = $2
+          )
+          AND (
+            categories @> ARRAY['Sales Reps']::text[]
+            OR categories @> ARRAY['sales_reps']::text[]
+            OR categories @> ARRAY['sales-reps']::text[]
+            OR categories @> ARRAY['Sales Rep']::text[]
+            OR categories @> ARRAY['sales_rep']::text[]
+            OR categories @> ARRAY['salesrep']::text[]
+            OR categories @> ARRAY['SalesRep']::text[]
+          )
+        ORDER BY created_at DESC 
+        LIMIT 1
+      `, {
+        bind: [tenantId.toString(), normalizedEmail],
+        type: sequelize.QueryTypes.SELECT
+      });
 
       if (results && results.length > 0) {
         const asset = results[0];
@@ -1081,33 +1008,7 @@ class WebhookService {
       }
 
       // Enhanced debugging - show what photos exist with proper error handling
-      await this.debugAvailablePhotos(sequelize, tenantId, normalizedEmail);
-      
-      return null;
-      
-    } catch (error) {
-      console.error('❌ Error fetching sales rep photo:', error.message);
-      
-      // If it's a database type error, provide helpful information
-      if (error.message.includes('operator does not exist') || error.message.includes('text[] && character varying[]')) {
-        console.error('💡 Database type error detected. This may be due to categories column type mismatch.');
-        console.error('💡 Run this SQL to fix: ALTER TABLE content_assets ALTER COLUMN categories TYPE text[] USING categories::text[];');
-      }
-      
-      return null;
-    }
-  }
-
-  /**
-   * Debug available photos with fallback queries
-   */
-  async debugAvailablePhotos(sequelize, tenantId, normalizedEmail) {
-    try {
-      console.log(`❌ No sales rep photo found for: ${normalizedEmail}`);
-      
-      // Try to list available photos with fallback query
       try {
-        // Try array-based query first
         const [allPhotos] = await sequelize.query(`
           SELECT 
             id, 
@@ -1133,6 +1034,8 @@ class WebhookService {
           type: sequelize.QueryTypes.SELECT
         });
 
+        console.log(`❌ No sales rep photo found for: ${normalizedEmail}`);
+        
         if (allPhotos && Array.isArray(allPhotos) && allPhotos.length > 0) {
           console.log(`📋 Available sales rep photos (${allPhotos.length}):`, 
             allPhotos.map(p => ({ 
@@ -1145,52 +1048,23 @@ class WebhookService {
         } else {
           console.log(`📋 No sales rep photos found in database for tenant ${tenantId}`);
         }
-        
-      } catch (debugArrayError) {
-        console.warn('⚠️ Array debug query failed, trying string fallback...');
-        
-        // Fallback debug query
-        const [allPhotos] = await sequelize.query(`
-          SELECT 
-            id, 
-            name,
-            metadata->>'repEmail' as rep_email,
-            metadata->>'email' as email,
-            categories
-          FROM content_assets 
-          WHERE 
-            tenant_id = $1
-            AND processing_status = 'completed'
-            AND (
-              LOWER(categories::text) LIKE '%sales rep%'
-              OR LOWER(categories::text) LIKE '%sales_rep%'
-              OR LOWER(categories::text) LIKE '%sales-rep%'
-              OR LOWER(categories::text) LIKE '%salesrep%'
-            )
-          ORDER BY created_at DESC 
-          LIMIT 10
-        `, {
-          bind: [tenantId.toString()],
-          type: sequelize.QueryTypes.SELECT
-        });
-
-        if (allPhotos && Array.isArray(allPhotos) && allPhotos.length > 0) {
-          console.log(`📋 Available sales rep photos (${allPhotos.length}) [fallback query]:`, 
-            allPhotos.map(p => ({ 
-              id: p.id, 
-              name: p.name, 
-              repEmail: p.rep_email || p.email,
-              categories: p.categories 
-            }))
-          );
-        } else {
-          console.log(`📋 No sales rep photos found in database for tenant ${tenantId} [fallback query]`);
-        }
+      } catch (debugError) {
+        console.error('❌ Error in debug photo listing:', debugError.message);
+        console.log(`📋 Could not list available photos due to database error`);
       }
       
-    } catch (debugError) {
-      console.error('❌ Error in debug photo listing:', debugError.message);
-      console.log(`📋 Could not list available photos due to database error`);
+      return null;
+      
+    } catch (error) {
+      console.error('❌ Error fetching sales rep photo:', error.message);
+      
+      // If it's a database type error, provide helpful information
+      if (error.message.includes('operator does not exist') || error.message.includes('text[] && character varying[]')) {
+        console.error('💡 Database type error detected. This may be due to categories column type mismatch.');
+        console.error('💡 Consider running: ALTER TABLE content_assets ALTER COLUMN categories TYPE text[];');
+      }
+      
+      return null;
     }
   }
 
