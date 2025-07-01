@@ -258,6 +258,13 @@ async processProjectVideosForExport(project, maxSizeMB = 5) {
         }
       }
     }
+
+    if (project.canvasBackground?.type === 'video' && project.canvasBackground.url) {
+      const base64 = await this.videoToBase64(project.canvasBackground.url, maxSizeMB);
+      if (base64) {
+        project.canvasBackground.url = base64;
+      }
+    }
     return project;
   } catch (error) {
     console.error('❌ Error processing project videos:', error);
@@ -1167,6 +1174,88 @@ async createOptiSignsApiGatewayConfig(projectId, tenantId, options = {}) {
     }
   }
 
+  async processVideo(file, fileName, baseUrl) {
+    try {
+      const tempPath = path.join(this.directories.temp, fileName);
+      if (file.buffer) {
+        await fs.writeFile(tempPath, file.buffer);
+      } else if (file.path) {
+        await fs.copyFile(file.path, tempPath);
+      } else {
+        throw new Error('No video buffer or path available');
+      }
+      const metadata = await new Promise((resolve, reject) => {
+        ffmpeg.ffprobe(tempPath, (err, data) => {
+          if (err) return reject(err);
+          resolve(data);
+        });
+      });
+      const stream = metadata.streams.find(s => s.width && s.height) || {};
+      const dimensions = { width: stream.width || 0, height: stream.height || 0 };
+      const duration = parseFloat(metadata.format.duration || 0);
+      const bitrate = parseInt(metadata.format.bit_rate || 0);
+      let fps = 0;
+      if (stream.avg_frame_rate && stream.avg_frame_rate.includes('/')) {
+        const parts = stream.avg_frame_rate.split('/');
+        fps = parseInt(parts[0]) / parseInt(parts[1] || 1);
+      }
+      const thumbName = `thumb_${fileName}.jpg`;
+      await new Promise((resolve, reject) => {
+        ffmpeg(tempPath)
+          .screenshots({ timestamps: ['1'], filename: thumbName, folder: this.directories.thumbnails, size: '320x180' })
+          .on('end', resolve)
+          .on('error', reject);
+      });
+      const thumbnailUrl = `${baseUrl}/uploads/content/thumbnails/${thumbName}`;
+      const previewUrls = {};
+      const previews = [
+        { name: '480p', width: 854, height: 480 },
+        { name: '720p', width: 1280, height: 720 }
+      ];
+      for (const p of previews) {
+        const prevName = `${p.name}_${fileName}.mp4`;
+        const prevPath = path.join(this.directories.previews, prevName);
+        await new Promise((resolve, reject) => {
+          ffmpeg(tempPath)
+            .size(`${p.width}x${p.height}`)
+            .output(prevPath)
+            .on('end', resolve)
+            .on('error', reject)
+            .run();
+        });
+        previewUrls[p.name] = `${baseUrl}/uploads/content/previews/${prevName}`;
+      }
+      return { dimensions, duration, bitrate, fps, thumbnailUrl, previewUrls };
+    } catch (error) {
+      console.error('❌ Error processing video:', error);
+      return { dimensions: {}, duration: null, bitrate: null, fps: null, thumbnailUrl: null, previewUrls: {} };
+    }
+  }
+
+  async processAudio(file, fileName, baseUrl) {
+    try {
+      const tempPath = path.join(this.directories.temp, fileName);
+      if (file.buffer) {
+        await fs.writeFile(tempPath, file.buffer);
+      } else if (file.path) {
+        await fs.copyFile(file.path, tempPath);
+      } else {
+        throw new Error('No audio buffer or path available');
+      }
+      const metadata = await new Promise((resolve, reject) => {
+        ffmpeg.ffprobe(tempPath, (err, data) => {
+          if (err) return reject(err);
+          resolve(data);
+        });
+      });
+      const duration = parseFloat(metadata.format.duration || 0);
+      const bitrate = parseInt(metadata.format.bit_rate || 0);
+      return { duration, bitrate, waveformUrl: null };
+    } catch (error) {
+      console.error('❌ Error processing audio:', error);
+      return { duration: null, bitrate: null, waveformUrl: null };
+    }
+  }
  async generateOptiSyncDataFeed(projectId, tenantId, options = {}) {
   try {
     if (!this.optisignsModels) {
@@ -1582,6 +1671,11 @@ async generateProjectHTML(project, options = {}) {
       elementsHTML += elementHTML;
     }
 
+    let backgroundVideoHTML = '';
+    if (canvasBackground.type === 'video' && canvasBackground.url) {
+      backgroundVideoHTML = `<video class="background-video" src="${canvasBackground.url}" autoplay loop muted playsinline style="position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;z-index:-1;"></video>`;
+    }
+
     // Generate background style (background may also be base64 now)
     let backgroundStyle = '';
     if (canvasBackground.type === 'solid') {
@@ -1697,6 +1791,7 @@ async generateProjectHTML(project, options = {}) {
 </head>
 <body>
     <div class="canvas" id="main-canvas">
+        ${backgroundVideoHTML}
         ${elementsHTML}
     </div>
     
