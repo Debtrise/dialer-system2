@@ -482,6 +482,46 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
     }
   });
 
+  // Generate a short celebration video using the rep photo
+  router.post('/sales-rep-photos/generate-video', authenticateToken, async (req, res) => {
+    try {
+      const { repEmail, repName, dealAmount = '', companyName = '' } = req.body;
+      if (!repEmail) {
+        return res.status(400).json({ error: 'repEmail is required' });
+      }
+      const email = repEmail.toLowerCase();
+      const asset = await ContentAsset.findOne({
+        where: {
+          tenantId: req.user.tenantId,
+          [sequelize.Sequelize.Op.or]: [
+            sequelize.literal(`metadata->>'repEmail' = '${email}'`),
+            sequelize.literal(`metadata->>'rep_email' = '${email}'`),
+            sequelize.literal(`metadata->>'email' = '${email}'`)
+          ]
+        }
+      });
+
+      if (!asset) {
+        return res.status(404).json({ error: 'Photo not found for this sales rep' });
+      }
+
+      const video = await contentService.generateCelebrationVideo({
+        repName: repName || asset.metadata?.repName || email,
+        repPhotoUrl: asset.publicUrl,
+        dealAmount,
+        companyName
+      });
+
+      res.json({
+        message: 'Video generated successfully',
+        videoUrl: video.publicUrl
+      });
+    } catch (error) {
+      console.error('Error generating celebration video:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   // Set fallback photo - ENHANCED with compatibility
   router.post('/sales-rep-photos/fallback', authenticateToken, upload.single('photo'), async (req, res) => {
     try {

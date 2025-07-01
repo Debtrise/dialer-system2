@@ -49,6 +49,9 @@ Upload and manage assets used by elements.
 ### Sales Rep Photo Element
 Templates can include an element with `elementType: "sales_rep_photo"`. When a project is generated from a webhook, the system automatically fills the element's `src` with the sales representative's photo based on the `{rep_photo}` variable.
 
+### Video Backgrounds
+Projects may define `canvasBackground.type: "video"` with a `url` to a video asset. When exported, the video is embedded in the generated HTML as a looping, muted element behind all other content.
+
 ## Variables and Exporting
 
 | Method | Path | Description |
