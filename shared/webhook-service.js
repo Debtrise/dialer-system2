@@ -44,6 +44,24 @@ class WebhookService {
   }
 
   /**
+   * Normalize takeover priority to supported levels
+   * Supported values in the DB are 'NORMAL', 'HIGH', 'EMERGENCY'.
+   * Any unknown value defaults to 'NORMAL'.
+   */
+  normalizeTakeoverPriority(priority) {
+    if (!priority) return 'NORMAL';
+    const mapping = {
+      EMERGENCY: 'EMERGENCY',
+      HIGH: 'HIGH',
+      NORMAL: 'NORMAL',
+      MEDIUM: 'NORMAL',
+      LOW: 'NORMAL'
+    };
+    const key = String(priority).toUpperCase();
+    return mapping[key] || 'NORMAL';
+  }
+
+  /**
    * Create a new webhook endpoint
    */
   async createWebhookEndpoint(data) {
@@ -657,10 +675,13 @@ class WebhookService {
         while (retryCount < maxRetries) {
           try {
             console.log(`🎯 Triggering takeover (attempt ${retryCount + 1}/${maxRetries})...`);
+            const takeoverPriority = this.normalizeTakeoverPriority(
+              optisignsConfig.takeover?.priority
+            );
             console.log(`📋 Takeover config:`, {
               displayId: optisignsApiId,
               assetId: assetResult.optisignsId,
-              priority: optisignsConfig.takeover?.priority || 'NORMAL',
+              priority: takeoverPriority,
               duration: optisignsConfig.takeover?.duration || 30
             });
             
@@ -671,7 +692,7 @@ class WebhookService {
               'ASSET',
               assetResult.optisignsId,
               {
-                priority: optisignsConfig.takeover?.priority || 'NORMAL',
+                priority: takeoverPriority,
                 duration: optisignsConfig.takeover?.duration || 30,
                 message: `Webhook announcement: ${contentProject.name}`,
                 initiatedBy: 'webhook_announcement'
