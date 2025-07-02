@@ -72,7 +72,8 @@ async function createTenantAndUser() {
       password: hashedPassword,
       email: 'admin@testcompany.com',
       tenantId: savedTenant._id,
-      role: 'admin'
+      role: 'admin',
+      permissions: {}
     });
 
     const savedUser = await user.save();

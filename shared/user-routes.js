@@ -121,7 +121,7 @@ module.exports = function(app, sequelize, authenticateToken) {
   router.post('/users', authenticateToken, requireAdmin, async (req, res) => {
     try {
       
-      const { username, password, email, role = 'agent' } = req.body;
+      const { username, password, email, role = 'agent', permissions = {} } = req.body;
       const tenantId = req.user.tenantId;
       
       // Validation
@@ -171,6 +171,7 @@ module.exports = function(app, sequelize, authenticateToken) {
         email,
         tenantId,
         role,
+        permissions,
         isActive: true,
         createdBy: req.user.id
       });
@@ -213,7 +214,7 @@ module.exports = function(app, sequelize, authenticateToken) {
         return res.status(404).json({ error: 'User not found' });
       }
       
-      const { email, role, isActive, firstName, lastName, phone, timezone, preferences } = req.body;
+      const { email, role, isActive, firstName, lastName, phone, timezone, preferences, permissions } = req.body;
       const updates = {};
       
       // Email update
@@ -250,6 +251,14 @@ module.exports = function(app, sequelize, authenticateToken) {
         }
         
         updates.role = role;
+      }
+
+      // Permissions update (admin only)
+      if (permissions !== undefined) {
+        if (requesterRole !== 'admin') {
+          return res.status(403).json({ error: 'Only admins can change user permissions' });
+        }
+        updates.permissions = permissions;
       }
       
       // Status update (admin only)

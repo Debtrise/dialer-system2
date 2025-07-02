@@ -47,6 +47,10 @@ const User = sequelize.define('User', {
     type: DataTypes.ENUM('admin', 'agent'),
     defaultValue: 'agent'
   },
+  permissions: {
+    type: DataTypes.JSONB,
+    defaultValue: {}
+  },
   firstName: {
     type: DataTypes.STRING,
     allowNull: true

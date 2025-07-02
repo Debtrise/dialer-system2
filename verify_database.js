@@ -39,6 +39,10 @@ const User = sequelize.define('User', {
     type: DataTypes.ENUM('admin', 'agent'),
     defaultValue: 'agent'
   },
+  permissions: {
+    type: DataTypes.JSONB,
+    defaultValue: {}
+  },
   firstName: {
     type: DataTypes.STRING(255),
     allowNull: true
@@ -188,7 +192,8 @@ async function verifyAndFixDatabase() {
         role: 'admin',
         firstName: 'System',
         lastName: 'Administrator',
-        isActive: true
+        isActive: true,
+        permissions: {}
       });
       console.log('✅ Admin user created');
     } else {
