@@ -71,6 +71,7 @@ let contentService = null;
 let optisignsService = null; // FIXED: Properly declared as global
 let billingModels = null;
 let marketingModels = null;
+let marketplaceModels = null;
 
 // Utility: ensure optisigns_displays.current_playlist_id column uses UUID type
 async function fixCurrentPlaylistColumn(sequelize) {
@@ -565,6 +566,17 @@ async function initializeModules() {
     console.error('Error initializing marketing module:', error);
   }
 
+  // Initialize lead marketplace module
+  try {
+    const initMarketplaceModels = require('../shared/marketplace-models');
+    marketplaceModels = initMarketplaceModels(sequelize);
+    const initMarketplaceRoutes = require('../shared/marketplace-routes');
+    initMarketplaceRoutes(app, sequelize, authenticateToken);
+    console.log('Marketplace module initialized successfully');
+  } catch (error) {
+    console.error('Error initializing marketplace module:', error);
+  }
+
   try {
     const initRecordings = require('../shared/recording-routes');
     recordingModels = initRecordings(app, sequelize, authenticateToken);
@@ -586,7 +598,8 @@ async function initializeModules() {
     dialplanBuilder,
     recordingModels,
     reportBuilderModels,
-    marketingModels
+    marketingModels,
+    marketplaceModels
   };
 }
 
@@ -1108,7 +1121,7 @@ async function startServer() {
     console.log('Database models synchronized.');
     
     // Initialize modules before defining routes
-    const { dialplanBuilder, recordingModels, reportBuilderModels } = await initializeModules();
+    const { dialplanBuilder, recordingModels, reportBuilderModels, marketplaceModels } = await initializeModules();
     
     // Define all routes
     await defineRoutes(dialplanBuilder);
