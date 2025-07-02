@@ -70,6 +70,7 @@ let contentModels = null;
 let contentService = null;
 let optisignsService = null; // FIXED: Properly declared as global
 let billingModels = null;
+let marketingModels = null;
 
 // Utility: ensure optisigns_displays.current_playlist_id column uses UUID type
 async function fixCurrentPlaylistColumn(sequelize) {
@@ -555,6 +556,15 @@ async function initializeModules() {
     console.error('Error initializing billing module:', error);
   }
 
+  // Initialize marketing module
+  try {
+    const initMarketing = require('../shared/marketing-routes');
+    marketingModels = initMarketing(app, sequelize, authenticateToken);
+    console.log('Marketing module initialized successfully');
+  } catch (error) {
+    console.error('Error initializing marketing module:', error);
+  }
+
   try {
     const initRecordings = require('../shared/recording-routes');
     recordingModels = initRecordings(app, sequelize, authenticateToken);
@@ -575,7 +585,8 @@ async function initializeModules() {
   return {
     dialplanBuilder,
     recordingModels,
-    reportBuilderModels
+    reportBuilderModels,
+    marketingModels
   };
 }
 
