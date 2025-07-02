@@ -40,7 +40,8 @@ module.exports = function(app, sequelize) {
         role,
         firstName,
         lastName,
-        isActive: true
+        isActive: true,
+        permissions: {}
       });
 
       res.status(201).json({ message: 'User created successfully' });

@@ -55,6 +55,10 @@ const User = sequelize.define('User', {
   role: {
     type: DataTypes.ENUM('admin', 'agent'),
     defaultValue: 'agent'
+  },
+  permissions: {
+    type: DataTypes.JSONB,
+    defaultValue: {}
   }
 });
 
@@ -260,7 +264,8 @@ app.post('/api/register', async (req, res) => {
       password: hashedPassword,
       email,
       tenantId,
-      role
+      role,
+      permissions: {}
     });
     
     res.status(201).json({ message: 'User created successfully' });
@@ -777,7 +782,8 @@ async function startServer() {
         password: hashedPassword,
         email: 'admin@example.com',
         tenantId: tenant.id.toString(),
-        role: 'admin'
+        role: 'admin',
+        permissions: {}
       });
       
       console.log('Default tenant and admin user created successfully');
