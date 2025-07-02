@@ -8,6 +8,13 @@ const moment = require('moment');
 
 module.exports = function(app, sequelize, authenticateToken) {
   const router = express.Router();
+
+  const requireAdmin = (req, res, next) => {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admin role required.' });
+    }
+    next();
+  };
   
   // Get User model from sequelize
   const User = sequelize.models.User;
@@ -19,12 +26,8 @@ module.exports = function(app, sequelize, authenticateToken) {
   // ===== User Management Routes (Admin Only) =====
   
   // List all users (admin only, filtered by tenant)
-  router.get('/users', authenticateToken, async (req, res) => {
+  router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
     try {
-      // Only admins can list users, and they see only users from their tenant
-      if (req.user.role !== 'admin') {
-        return res.status(403).json({ error: 'Access denied. Admin role required.' });
-      }
       
       const { page = 1, limit = 50, role, status, search } = req.query;
       const tenantId = req.user.tenantId;
@@ -115,11 +118,8 @@ module.exports = function(app, sequelize, authenticateToken) {
   });
 
   // Create new user (admin only)
-  router.post('/users', authenticateToken, async (req, res) => {
+  router.post('/users', authenticateToken, requireAdmin, async (req, res) => {
     try {
-      if (req.user.role !== 'admin') {
-        return res.status(403).json({ error: 'Access denied. Admin role required.' });
-      }
       
       const { username, password, email, role = 'agent' } = req.body;
       const tenantId = req.user.tenantId;
@@ -289,11 +289,8 @@ module.exports = function(app, sequelize, authenticateToken) {
   });
   
   // Delete user (admin only)
-  router.delete('/users/:id', authenticateToken, async (req, res) => {
+  router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
-      if (req.user.role !== 'admin') {
-        return res.status(403).json({ error: 'Access denied. Admin role required.' });
-      }
       
       // Handle 'me' parameter first - convert to actual user ID
       const userId = req.params.id === 'me' ? req.user.id : req.params.id;
@@ -460,11 +457,8 @@ module.exports = function(app, sequelize, authenticateToken) {
   // ===== User Status Management =====
   
   // Update user status (admin only)
-  router.put('/users/:id/status', authenticateToken, async (req, res) => {
+  router.put('/users/:id/status', authenticateToken, requireAdmin, async (req, res) => {
     try {
-      if (req.user.role !== 'admin') {
-        return res.status(403).json({ error: 'Access denied. Admin role required.' });
-      }
       
       // Handle 'me' parameter first - convert to actual user ID
       const userId = req.params.id === 'me' ? req.user.id : req.params.id;
@@ -507,11 +501,8 @@ module.exports = function(app, sequelize, authenticateToken) {
   // ===== User Statistics =====
   
   // Get user statistics (admin only)
-  router.get('/users/stats/overview', authenticateToken, async (req, res) => {
+  router.get('/users/stats/overview', authenticateToken, requireAdmin, async (req, res) => {
     try {
-      if (req.user.role !== 'admin') {
-        return res.status(403).json({ error: 'Access denied. Admin role required.' });
-      }
       
       const tenantId = req.user.tenantId;
       
