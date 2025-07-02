@@ -480,6 +480,11 @@ async function initializeModules() {
   stageRoutes(app, sequelize, authenticateToken);
   console.log('Stage Routes module initialized successfully');
 
+  console.log('Initializing Tenant Routes module...');
+  const tenantRoutes = require('../shared/tenant-routes');
+  tenantRoutes(app, sequelize, authenticateToken);
+  console.log('Tenant Routes module initialized successfully');
+
   // FIXED: Initialize the Webhook Integration module AFTER optisignsService is available
   console.log('Initializing Webhook Integration module...');
   
