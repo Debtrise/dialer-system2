@@ -1,10 +1,19 @@
 const express = require('express');
 const MarketingService = require('./marketing-service');
 
-module.exports = function(app, sequelize, authenticateToken) {
+module.exports = function(
+  app,
+  sequelize,
+  authenticateToken,
+  webhookService = null
+) {
   const router = express.Router();
   const models = require('./marketing-models')(sequelize);
-  const service = new MarketingService(models);
+  const service = new MarketingService(
+    models,
+    webhookService,
+    sequelize.models.Lead
+  );
 
   router.post('/marketing/accounts', authenticateToken, async (req, res) => {
     try {
@@ -39,6 +48,21 @@ module.exports = function(app, sequelize, authenticateToken) {
     try {
       const metrics = await service.getCampaignMetrics(req.params.id);
       res.json(metrics);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  router.post('/marketing/campaigns/:id/leads', authenticateToken, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const leadData = req.body;
+      const lead = await service.recordLead(
+        req.user.tenantId,
+        campaignId,
+        leadData
+      );
+      res.json(lead);
     } catch (err) {
       res.status(400).json({ error: err.message });
     }
