@@ -2,13 +2,21 @@ const { DataTypes } = require('sequelize');
 
 module.exports = function (sequelize) {
   // Avoid redefining models if they already exist
-  if (sequelize.models.Lead && sequelize.models.CallLog && sequelize.models.DID) {
+  if (sequelize.models.Lead && sequelize.models.CallLog && sequelize.models.DID && sequelize.models.Stage) {
     return {
       Lead: sequelize.models.Lead,
       CallLog: sequelize.models.CallLog,
       DID: sequelize.models.DID,
+      Stage: sequelize.models.Stage,
     };
   }
+
+  // Define Stage model if not present
+  const Stage = sequelize.models.Stage || sequelize.define('Stage', {
+    tenantId: { type: DataTypes.STRING, allowNull: false },
+    title:    { type: DataTypes.STRING, allowNull: false },
+    catalysts:{ type: DataTypes.JSONB, defaultValue: [] }
+  });
 
   const Lead = sequelize.define('Lead', {
     tenantId: {
@@ -34,6 +42,11 @@ module.exports = function (sequelize) {
     source: {
       type: DataTypes.STRING,
       allowNull: true,
+    },
+    stageId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: { model: Stage, key: 'id' }
     },
     additionalData: {
       type: DataTypes.JSONB,
@@ -122,5 +135,9 @@ module.exports = function (sequelize) {
     lastUsed: { type: DataTypes.DATE, allowNull: true },
   });
 
-  return { Lead, CallLog, DID };
+  // Associations
+  Stage.hasMany(Lead, { foreignKey: 'stageId', as: 'leads' });
+  Lead.belongsTo(Stage, { foreignKey: 'stageId', as: 'stage' });
+
+  return { Lead, CallLog, DID, Stage };
 };
