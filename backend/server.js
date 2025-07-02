@@ -72,6 +72,7 @@ let optisignsService = null; // FIXED: Properly declared as global
 let billingModels = null;
 let marketingModels = null;
 let marketplaceModels = null;
+let pbxModels = null;
 
 // Utility: ensure optisigns_displays.current_playlist_id column uses UUID type
 async function fixCurrentPlaylistColumn(sequelize) {
@@ -585,6 +586,15 @@ async function initializeModules() {
     console.error('Error initializing recording module:', error);
   }
 
+  // Initialize PBX module
+  try {
+    const initPBX = require('../shared/pbx-routes');
+    pbxModels = initPBX(app, sequelize, authenticateToken);
+    console.log('PBX module initialized successfully');
+  } catch (error) {
+    console.error('Error initializing PBX module:', error);
+  }
+
   // Initialize TracersAPI module
   try {
     const initTracers = require('../shared/tracers-routes');
@@ -599,7 +609,8 @@ async function initializeModules() {
     recordingModels,
     reportBuilderModels,
     marketingModels,
-    marketplaceModels
+    marketplaceModels,
+    pbxModels
   };
 }
 
