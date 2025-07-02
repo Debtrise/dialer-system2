@@ -39,6 +39,12 @@ module.exports = (sequelize) => {
       type: DataTypes.BOOLEAN,
       defaultValue: true
     },
+    // Number of days to repeat the journey. If null or 0, no repetition
+    repeatDays: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null
+    },
     triggerCriteria: {
       type: DataTypes.JSONB,
       defaultValue: {
@@ -125,6 +131,11 @@ module.exports = (sequelize) => {
       defaultValue: true
     },
     isExitPoint: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false
+    },
+    // Marks the end of a logical day within the journey
+    isDayEnd: {
       type: DataTypes.BOOLEAN,
       defaultValue: false
     }

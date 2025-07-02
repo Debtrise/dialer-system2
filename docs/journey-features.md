@@ -11,3 +11,11 @@ The journey module automates follow-up steps for leads. Supported action types a
 - **delay** – pause for a specified period before the next step
 
 Action types previously listed but not yet implemented have been removed from the models.
+
+## Day-based Journeys
+
+Journeys can repeat the same set of steps for multiple days. Each step may be
+marked with `isDayEnd` to indicate the end of a day. When a journey record
+reaches a step marked as the day end, the `dayCount` stored in the journey's
+context is incremented. If the parent `Journey` specifies `repeatDays`, the
+steps start over from the beginning until the day count exceeds this value.
