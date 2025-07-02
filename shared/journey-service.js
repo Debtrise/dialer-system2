@@ -278,7 +278,10 @@ async checkAgentAvailability(apiConfig, ingroup) {
             nextExecutionTime: null,
             lastExecutionTime: null,
             executionHistory: [],
-            contextData: options.contextData || existingJourney.contextData || {}
+            contextData: {
+              dayCount: 1,
+              ...(options.contextData || {})
+            }
           });
           
           // Cancel any pending executions
@@ -304,10 +307,13 @@ async checkAgentAvailability(apiConfig, ingroup) {
       const leadJourney = await this.models.LeadJourney.create({
         leadId,
         journeyId,
-        tenantId: journey.tenantId, // ADDED THIS LINE
+        tenantId: journey.tenantId,
         status: 'active',
         startedAt: new Date(),
-        contextData: options.contextData || {}
+        contextData: {
+          dayCount: 1,
+          ...(options.contextData || {})
+        }
       });
       
       // Start from the first step
@@ -323,6 +329,13 @@ async checkAgentAvailability(apiConfig, ingroup) {
    */
   async startJourneyFromFirstStep(leadJourney) {
     try {
+      // Initialize day counter if not present
+      const context = leadJourney.contextData || {};
+      if (context.dayCount === undefined) {
+        context.dayCount = 1;
+        await leadJourney.update({ contextData: context });
+      }
+
       // Find the first step
       const firstStep = await this.models.JourneyStep.findOne({
         where: {
@@ -488,7 +501,7 @@ async checkAgentAvailability(apiConfig, ingroup) {
       }
       
       // Find the next step
-      const nextStep = await this.models.JourneyStep.findOne({
+      let nextStep = await this.models.JourneyStep.findOne({
         where: {
           journeyId: leadJourney.journeyId,
           stepOrder: { [Op.gt]: currentStep.stepOrder },
@@ -496,15 +509,51 @@ async checkAgentAvailability(apiConfig, ingroup) {
         },
         order: [['stepOrder', 'ASC']]
       });
-      
+
       if (!nextStep) {
-        // No more steps, journey is completed
-        await leadJourney.update({
-          status: 'completed',
-          completedAt: new Date(),
-          currentStepId: null
-        });
-        return;
+        // No more steps. Check if we should repeat from day 1
+        const journey = await this.models.Journey.findByPk(leadJourney.journeyId);
+        const context = leadJourney.contextData || {};
+        const repeatDays = journey.repeatDays || 0;
+
+        if (currentStep.isDayEnd && repeatDays && context.dayCount < repeatDays) {
+          // Increment day counter and restart from first step
+          context.dayCount = (context.dayCount || 1) + 1;
+          await leadJourney.update({ contextData: context });
+
+          nextStep = await this.models.JourneyStep.findOne({
+            where: {
+              journeyId: leadJourney.journeyId,
+              isActive: true
+            },
+            order: [['stepOrder', 'ASC']]
+          });
+        } else {
+          // Journey completed
+          await leadJourney.update({
+            status: 'completed',
+            completedAt: new Date(),
+            currentStepId: null
+          });
+          return;
+        }
+      } else if (currentStep.isDayEnd) {
+        // Completed a day but more steps exist; increment day count
+        const journey = await this.models.Journey.findByPk(leadJourney.journeyId);
+        const context = leadJourney.contextData || {};
+        const repeatDays = journey.repeatDays || 0;
+        context.dayCount = (context.dayCount || 1) + 1;
+        await leadJourney.update({ contextData: context });
+
+        if (repeatDays && context.dayCount > repeatDays) {
+          // Exceeded repeat days, mark completed
+          await leadJourney.update({
+            status: 'completed',
+            completedAt: new Date(),
+            currentStepId: null
+          });
+          return;
+        }
       }
       
       // Schedule the next step
