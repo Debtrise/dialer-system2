@@ -10,7 +10,8 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   email: { type: String, required: true },
   tenantId: { type: String, required: true },
-  role: { type: String, enum: ['admin', 'agent'], default: 'agent' }
+  role: { type: String, enum: ['admin', 'agent'], default: 'agent' },
+  permissions: { type: Object, default: {} }
 });
 
 const User = mongoose.model('User', userSchema);
@@ -28,7 +29,8 @@ async function createTestUser() {
       password: hashedPassword,
       email: 'test@example.com',
       tenantId: 'test123', // Simple tenant ID for testing
-      role: 'admin'
+      role: 'admin',
+      permissions: {}
     });
     
     await user.save();

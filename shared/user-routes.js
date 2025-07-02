@@ -213,7 +213,7 @@ module.exports = function(app, sequelize, authenticateToken) {
         return res.status(404).json({ error: 'User not found' });
       }
       
-      const { email, role, isActive, firstName, lastName, phone, timezone, preferences } = req.body;
+      const { email, role, permissions, isActive, firstName, lastName, phone, timezone, preferences } = req.body;
       const updates = {};
       
       // Email update
@@ -251,6 +251,17 @@ module.exports = function(app, sequelize, authenticateToken) {
         
         updates.role = role;
       }
+
+      // Permissions update (admin only)
+      if (permissions !== undefined) {
+        if (requesterRole !== 'admin') {
+          return res.status(403).json({ error: 'Only admins can change user permissions' });
+        }
+        if (typeof permissions !== 'object') {
+          return res.status(400).json({ error: 'Permissions must be an object' });
+        }
+        updates.permissions = permissions;
+      }
       
       // Status update (admin only)
       if (isActive !== undefined) {
@@ -284,6 +295,44 @@ module.exports = function(app, sequelize, authenticateToken) {
       });
     } catch (error) {
       console.error('Error updating user:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update role and permissions (admin only)
+  router.put('/users/:id/role-permissions', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const { role, permissions } = req.body;
+      const user = await User.findOne({
+        where: { id: req.params.id, tenantId: req.user.tenantId }
+      });
+
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const updates = {};
+
+      if (role !== undefined) {
+        if (!['admin', 'agent'].includes(role)) {
+          return res.status(400).json({ error: 'Invalid role. Must be admin or agent' });
+        }
+        updates.role = role;
+      }
+
+      if (permissions !== undefined) {
+        if (typeof permissions !== 'object') {
+          return res.status(400).json({ error: 'Permissions must be an object' });
+        }
+        updates.permissions = permissions;
+      }
+
+      await user.update(updates);
+
+      const { password: _pw, ...userWithoutPassword } = user.toJSON();
+      res.json({ message: 'Role/permissions updated', user: userWithoutPassword });
+    } catch (error) {
+      console.error('Error updating role/permissions:', error);
       res.status(500).json({ error: error.message });
     }
   });

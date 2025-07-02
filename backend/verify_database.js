@@ -39,6 +39,10 @@ const User = sequelize.define('User', {
     type: DataTypes.ENUM('admin', 'agent'),
     defaultValue: 'agent'
   },
+  permissions: {
+    type: DataTypes.JSONB,
+    defaultValue: {}
+  },
   firstName: {
     type: DataTypes.STRING(255),
     allowNull: true
@@ -186,6 +190,7 @@ async function verifyAndFixDatabase() {
         email: 'admin@example.com',
         tenantId: defaultTenant.id,
         role: 'admin',
+        permissions: {},
         firstName: 'System',
         lastName: 'Administrator',
         isActive: true

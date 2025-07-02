@@ -46,7 +46,8 @@ app.post('/api/register', async (req, res) => {
       password: hashedPassword,
       email,
       tenantId,
-      role
+      role,
+      permissions: {}
     });
     
     await user.save();
