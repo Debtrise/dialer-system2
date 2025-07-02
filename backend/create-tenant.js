@@ -46,6 +46,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true },
   tenantId: { type: String, required: true },
   role: { type: String, enum: ['admin', 'agent'], default: 'agent' },
+  permissions: { type: Object, default: {} },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -72,7 +73,8 @@ async function createTenantAndUser() {
       password: hashedPassword,
       email: 'admin@testcompany.com',
       tenantId: savedTenant._id,
-      role: 'admin'
+      role: 'admin',
+      permissions: {}
     });
 
     const savedUser = await user.save();

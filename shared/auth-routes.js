@@ -9,7 +9,7 @@ module.exports = function(app, sequelize) {
 
   router.post('/register', async (req, res) => {
     try {
-      const { username, password, email, tenantId, role = 'agent', firstName, lastName } = req.body;
+      const { username, password, email, tenantId, role = 'agent', permissions = {}, firstName, lastName } = req.body;
 
       if (!username || !password || !email || !tenantId) {
         return res.status(400).json({ error: 'Username, password, email and tenantId are required' });
@@ -38,6 +38,7 @@ module.exports = function(app, sequelize) {
         email,
         tenantId,
         role,
+        permissions,
         firstName,
         lastName,
         isActive: true
@@ -73,7 +74,8 @@ module.exports = function(app, sequelize) {
           id: user.id,
           username: user.username,
           tenantId: user.tenantId,
-          role: user.role
+          role: user.role,
+          permissions: user.permissions || {}
         },
         JWT_SECRET,
         { expiresIn: '1d' }
@@ -86,6 +88,7 @@ module.exports = function(app, sequelize) {
           username: user.username,
           tenantId: user.tenantId,
           role: user.role,
+          permissions: user.permissions || {},
           firstName: user.firstName,
           lastName: user.lastName
         }
