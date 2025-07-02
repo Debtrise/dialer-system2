@@ -1,6 +1,9 @@
 class MarketingService {
-  constructor(models) {
+  constructor(models, webhookService = null, LeadModel = null) {
     this.models = models;
+    this.webhookService = webhookService;
+    this.Lead = LeadModel;
+    this.marketingEndpointKey = 'marketing_lead';
   }
 
   async linkAccount(tenantId, platform, accountId, tokens = {}, metadata = {}) {
@@ -47,7 +50,7 @@ class MarketingService {
     const campaign = await this.models.AdCampaign.findByPk(campaignId);
     if (!campaign) throw new Error('Campaign not found');
 
-    await this.models.AdLead.create({
+    const adLead = await this.models.AdLead.create({
       tenantId,
       adCampaignId: campaignId,
       externalLeadId: leadData.externalLeadId,
@@ -56,6 +59,36 @@ class MarketingService {
     });
 
     await campaign.increment('leads');
+
+    if (leadData.leadId && this.Lead) {
+      const lead = await this.Lead.findByPk(leadData.leadId);
+      if (lead) {
+        const additionalData = lead.additionalData || {};
+        additionalData.marketing = additionalData.marketing || [];
+        additionalData.marketing.push({
+          campaignId,
+          adAccountId: campaign.adAccountId,
+          externalLeadId: leadData.externalLeadId,
+          data: leadData.data || {}
+        });
+        await lead.update({ additionalData });
+      }
+    }
+
+    if (this.webhookService && this.webhookService.processWebhook) {
+      try {
+        await this.webhookService.processWebhook(
+          this.marketingEndpointKey,
+          { tenantId, campaignId, leadData },
+          {},
+          'marketing-service'
+        );
+      } catch (err) {
+        console.error('Marketing webhook failed:', err.message);
+      }
+    }
+
+    return adLead;
   }
 
   async recordConversion(campaignId) {

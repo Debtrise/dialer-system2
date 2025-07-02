@@ -31,3 +31,14 @@ All routes are mounted under `/api` and require authentication.
 
 ## Get Campaign Metrics
 `GET /marketing/campaigns/:id/metrics`
+
+## Record Lead
+`POST /marketing/campaigns/:id/leads`
+```json
+{
+  "leadId": 42,
+  "externalLeadId": "abc123",
+  "data": { "source": "facebook" }
+}
+```
+Creates a marketing lead entry, attaches marketing info to the lead and triggers a webhook event.

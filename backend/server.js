@@ -571,7 +571,12 @@ async function initializeModules() {
   // Initialize marketing module
   try {
     const initMarketing = require('../shared/marketing-routes');
-    marketingModels = initMarketing(app, sequelize, authenticateToken);
+    marketingModels = initMarketing(
+      app,
+      sequelize,
+      authenticateToken,
+      webhookIntegration?.services?.webhookService
+    );
     console.log('Marketing module initialized successfully');
   } catch (error) {
     console.error('Error initializing marketing module:', error);
