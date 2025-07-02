@@ -25,7 +25,9 @@ module.exports = function(sequelize) {
     quantity: { type: DataTypes.INTEGER, allowNull: false },
     pricePerLead: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
     totalCost: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
-    status: { type: DataTypes.ENUM('pending', 'completed', 'cancelled'), defaultValue: 'pending' }
+    status: { type: DataTypes.ENUM('pending', 'completed', 'cancelled'), defaultValue: 'pending' },
+    // Number of leads from this order that were eventually closed by the buyer.
+    closedLeads: { type: DataTypes.INTEGER, defaultValue: 0 }
   });
 
   LeadProvider.hasMany(LeadListing, { foreignKey: 'providerId' });

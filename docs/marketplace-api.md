@@ -41,3 +41,15 @@ Payload:
 
 ## List Orders
 `GET /marketplace/orders`
+
+## Update Order Performance
+`POST /marketplace/orders/:orderId/performance`
+```json
+{
+  "closedLeads": 5
+}
+```
+
+## Provider Analytics
+`GET /marketplace/providers/:providerId/analytics`
+Returns overall close rates and buyer breakdown for a lead provider.
