@@ -48,6 +48,26 @@ module.exports = function(app, sequelize, authenticateToken) {
     res.json(orders);
   });
 
+  // Update order performance (e.g. how many leads were closed)
+  router.post('/marketplace/orders/:id/performance', authenticateToken, async (req, res) => {
+    try {
+      const order = await service.updateOrderPerformance(req.params.id, req.body.closedLeads);
+      res.json(order);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Get aggregated analytics for a provider
+  router.get('/marketplace/providers/:id/analytics', authenticateToken, async (req, res) => {
+    try {
+      const data = await service.getProviderAnalytics(req.params.id);
+      res.json(data);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   app.use('/api', router);
   return models;
 };
