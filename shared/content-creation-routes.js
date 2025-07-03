@@ -556,7 +556,7 @@ app.get('/api/content/debug/:exportId', authenticateToken, async (req, res) => {
         req.user.id,
         req.body
       );
-      
+
       res.status(201).json({
         template,
         message: 'Template created successfully',
@@ -564,6 +564,27 @@ app.get('/api/content/debug/:exportId', authenticateToken, async (req, res) => {
       });
     } catch (error) {
       console.error('Error creating template:', error.message);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Update template
+  app.put('/api/content/templates/:templateId', authenticateToken, async (req, res) => {
+    try {
+      const template = await contentService.updateTemplate(
+        req.params.templateId,
+        req.user.tenantId,
+        req.user.id,
+        req.body
+      );
+
+      res.json({
+        template,
+        message: 'Template updated successfully',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error updating template:', error.message);
       res.status(400).json({ error: error.message });
     }
   });

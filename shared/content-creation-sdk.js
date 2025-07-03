@@ -555,6 +555,28 @@ class ContentCreationSDK {
     }
   }
 
+  async updateTemplate(templateId, tenantId, updateData) {
+    try {
+      const template = await this.models.ContentTemplate.findOne({
+        where: { id: templateId, tenantId }
+      });
+
+      if (!template) {
+        throw new Error('Template not found');
+      }
+
+      await template.update({
+        ...updateData,
+        updatedAt: new Date()
+      });
+
+      this.log(`Template ${templateId} updated for tenant ${tenantId}`);
+      return template;
+    } catch (error) {
+      this.handleError('updateTemplate', error);
+    }
+  }
+
   /**
    * Get templates with filtering
    */

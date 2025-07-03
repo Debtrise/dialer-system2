@@ -452,6 +452,29 @@ getImageExtension(contentType, url) {
     }
   }
 
+  async updateTemplate(templateId, tenantId, userId, updateData) {
+    try {
+      const template = await this.models.ContentTemplate.findOne({
+        where: { id: templateId, tenantId }
+      });
+
+      if (!template) {
+        throw new Error('Template not found');
+      }
+
+      await template.update({
+        ...updateData,
+        updatedAt: new Date()
+      });
+
+      console.log(`Template "${template.name}" updated for tenant ${tenantId}`);
+      return template;
+    } catch (error) {
+      console.error('Error updating template:', error);
+      throw new Error(`Failed to update template: ${error.message}`);
+    }
+  }
+
 
   // ===== PROJECT MANAGEMENT =====
 
