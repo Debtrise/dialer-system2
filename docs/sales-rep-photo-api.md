@@ -33,6 +33,14 @@ curl -X POST http://localhost:3001/api/sales-rep-photos/upload \
   -F "repName=John Doe"
 ```
 
+Upload many reps at once from a CSV file with `name`, `email` and `photoUrl` columns:
+
+```bash
+curl -X POST http://localhost:3001/api/sales-rep-photos/bulk-csv \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F "csv=@reps.csv"
+```
+
 ```bash
 curl -X POST http://localhost:3001/api/webhooks/endpoint/YOUR_ENDPOINT_KEY \
   -H "Authorization: Bearer YOUR_WEBHOOK_TOKEN" \
