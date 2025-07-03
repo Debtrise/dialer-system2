@@ -167,10 +167,31 @@ async function findAllSalesRepAssets(ContentAsset, sequelize, whereConditions, o
       bind: [tenantId, limit, offset],
       type: sequelize.QueryTypes.SELECT
     });
-    
+
+    let ids = [];
     if (results && results.length > 0) {
-      // Convert raw results back to model instances
-      const ids = results.map(r => r.id);
+      ids = results.map(r => r.id);
+    } else {
+      // Fallback to simple text search when no results returned
+      const fallbackQuery = `
+        SELECT * FROM content_assets
+        WHERE LOWER(categories::text) LIKE '%sales rep%'
+        AND tenant_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2 OFFSET $3
+      `;
+
+      const [fallbackResults] = await sequelize.query(fallbackQuery, {
+        bind: [tenantId, limit, offset],
+        type: sequelize.QueryTypes.SELECT
+      });
+
+      if (fallbackResults && fallbackResults.length > 0) {
+        ids = fallbackResults.map(r => r.id);
+      }
+    }
+
+    if (ids.length > 0) {
       return await ContentAsset.findAll({
         where: { id: { [sequelize.Sequelize.Op.in]: ids } },
         order: [['createdAt', 'DESC']]
@@ -179,7 +200,7 @@ async function findAllSalesRepAssets(ContentAsset, sequelize, whereConditions, o
     return [];
   } catch (error) {
     console.error('❌ Error in findAllSalesRepAssets:', error.message);
-    
+
     // Fallback to simple text search only
     const fallbackQuery = `
       SELECT * FROM content_assets 
@@ -253,6 +274,18 @@ async function countSalesRepAssets(ContentAsset, sequelize, whereConditions) {
       return 0;
     }
   }
+}
+
+// Parse CSV data from an uploaded buffer
+function parseCsvBuffer(buffer) {
+  return new Promise((resolve, reject) => {
+    const rows = [];
+    Readable.from(buffer)
+      .pipe(csv())
+      .on('data', (data) => rows.push(data))
+      .on('end', () => resolve(rows))
+      .on('error', reject);
+  });
 }
 
 module.exports = function(app, sequelize, authenticateToken, contentService) {
@@ -387,6 +420,97 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
 
     } catch (error) {
       console.error('Error uploading sales rep photo:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Bulk upload photos using a CSV with name,email,photoUrl columns
+  router.post('/sales-rep-photos/bulk-csv', authenticateToken, upload.single('csv'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'CSV file is required' });
+      }
+
+      const rows = await parseCsvBuffer(req.file.buffer);
+      const successes = [];
+      const failures = [];
+
+      for (const row of rows) {
+        const email = (row.email || row.repEmail || row.rep_email || '').toLowerCase().trim();
+        const name = row.name || row.repName || row.rep_name || '';
+        const photoUrl = row.photoUrl || row.photo_url || row.url || '';
+
+        if (!email || !photoUrl) {
+          failures.push({ row, error: 'Missing email or photoUrl' });
+          continue;
+        }
+
+        try {
+          const response = await axios.get(photoUrl, { responseType: 'arraybuffer', timeout: 15000 });
+          const file = {
+            originalname: path.basename(new URL(photoUrl).pathname || 'photo.jpg'),
+            mimetype: response.headers['content-type'] || 'image/jpeg',
+            buffer: Buffer.from(response.data),
+            size: response.data.length
+          };
+
+          const metadata = {
+            name: `Sales Rep Photo - ${name || email}`,
+            tags: ['sales-rep', 'profile', 'photo'],
+            categories: ['Sales Reps'],
+            metadata: {
+              repEmail: email,
+              repName: name || null,
+              uploadedBy: req.user.email || req.user.username,
+              originalUrl: photoUrl,
+              uploadedAt: new Date().toISOString()
+            }
+          };
+
+          const asset = await contentService.uploadAsset(
+            req.user.tenantId,
+            req.user.id,
+            file,
+            metadata
+          );
+
+          try {
+            const thumbName = path.basename(asset.thumbnailUrl || '');
+            const repThumbDir = contentService.directories.salesRepThumbnails;
+            const repPreviewDir = contentService.directories.salesRepPreviews;
+            await fs.mkdir(repThumbDir, { recursive: true });
+            await fs.mkdir(repPreviewDir, { recursive: true });
+
+            if (thumbName) {
+              const src = path.join(contentService.directories.thumbnails, thumbName);
+              const dest = path.join(repThumbDir, thumbName);
+              await fs.copyFile(src, dest);
+              asset.thumbnailUrl = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-thumbnails/${thumbName}`;
+            }
+
+            const newPreviews = {};
+            for (const [size, url] of Object.entries(asset.previewUrls || {})) {
+              const namePart = path.basename(url);
+              const src = path.join(contentService.directories.previews, namePart);
+              const dest = path.join(repPreviewDir, namePart);
+              await fs.copyFile(src, dest);
+              newPreviews[size] = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-previews/${namePart}`;
+            }
+
+            await asset.update({ thumbnailUrl: asset.thumbnailUrl, previewUrls: newPreviews });
+          } catch (thumbErr) {
+            console.warn('⚠️ Failed to persist sales rep thumbnails:', thumbErr.message);
+          }
+
+          successes.push({ email, assetId: asset.id });
+        } catch (err) {
+          failures.push({ email, error: err.message });
+        }
+      }
+
+      res.json({ message: 'Bulk CSV upload processed', successes, failures });
+    } catch (error) {
+      console.error('Error processing bulk CSV upload:', error);
       res.status(400).json({ error: error.message });
     }
   });
