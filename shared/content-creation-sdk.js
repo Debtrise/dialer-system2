@@ -6,7 +6,9 @@ const fs = require('fs').promises;
 const sharp = require('sharp'); // For image processing
 const ffmpeg = require('fluent-ffmpeg'); // For video processing
 const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 ffmpeg.setFfprobePath(ffprobeInstaller.path);
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 const { Op, Sequelize } = require('sequelize');
 
 class ContentCreationSDK {
