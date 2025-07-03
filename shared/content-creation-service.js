@@ -1196,7 +1196,7 @@ async createOptiSignsApiGatewayConfig(projectId, tenantId, options = {}) {
       });
       const stream = metadata.streams.find(s => s.width && s.height) || {};
       const dimensions = { width: stream.width || 0, height: stream.height || 0 };
-      const duration = parseFloat(metadata.format.duration || 0);
+      const duration = Math.round(parseFloat(metadata.format.duration || 0));
       const bitrate = parseInt(metadata.format.bit_rate || 0);
       let fps = 0;
       if (stream.avg_frame_rate && stream.avg_frame_rate.includes('/')) {
@@ -1252,7 +1252,7 @@ async createOptiSignsApiGatewayConfig(projectId, tenantId, options = {}) {
           resolve(data);
         });
       });
-      const duration = parseFloat(metadata.format.duration || 0);
+      const duration = Math.round(parseFloat(metadata.format.duration || 0));
       const bitrate = parseInt(metadata.format.bit_rate || 0);
       return { duration, bitrate, waveformUrl: null };
     } catch (error) {
