@@ -8,6 +8,7 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
+    "@ffprobe-installer/ffprobe": "^2.1.2",
     "@optisigns/optisigns": "^1.0.2",
     "asterisk-ami-client": "^1.1.5",
     "axios": "^1.10.0",
