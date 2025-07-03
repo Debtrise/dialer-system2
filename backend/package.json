@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@ffprobe-installer/ffprobe": "^2.1.2",
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@optisigns/optisigns": "^1.0.2",
     "asterisk-ami-client": "^1.1.5",
     "axios": "^1.10.0",
