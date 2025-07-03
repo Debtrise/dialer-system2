@@ -21,6 +21,7 @@ Manage templates for reusable layouts.
 | `GET` | `/api/content/templates` | List templates with optional filters. |
 | `GET` | `/api/content/templates/:templateId` | Retrieve a single template. |
 | `POST` | `/api/content/templates` | Create a new template. |
+| `PUT` | `/api/content/templates/:templateId` | Update an existing template. |
 
 ## Project Endpoints
 Projects contain elements that make up a piece of content.
