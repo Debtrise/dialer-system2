@@ -1002,7 +1002,7 @@ class WebhookService {
         
         let publicUrl = asset.public_url;
         if (!publicUrl && asset.file_path) {
-          const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
+          const baseUrl = process.env.BASE_URL || 'http://34.122.156.88:3001';
           const fileName = path.basename(asset.file_path);
           publicUrl = `${baseUrl}/uploads/content/assets/${fileName}`;
           
@@ -1132,7 +1132,7 @@ class WebhookService {
         
         let publicUrl = asset.public_url;
         if (!publicUrl && asset.file_path) {
-          const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
+          const baseUrl = process.env.BASE_URL || 'http://34.122.156.88:3001';
           const fileName = path.basename(asset.file_path);
           publicUrl = `${baseUrl}/uploads/content/assets/${fileName}`;
           

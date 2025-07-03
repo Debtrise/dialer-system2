@@ -2419,7 +2419,9 @@ async generateProjectImage(project, options = {}) {
           .on('error', reject);
       });
 
-      const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
+      // Use configured BASE_URL for generating links to the video file.
+      // Default to the production server if the environment variable is not set
+      const baseUrl = process.env.BASE_URL || 'http://34.122.156.88:3001';
       const publicUrl = `${baseUrl}/uploads/content/videos/${outputName}`;
 
       return { filePath: outputPath, publicUrl };
