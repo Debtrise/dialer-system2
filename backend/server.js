@@ -29,6 +29,8 @@ console.log('✅ Static file serving enabled for /uploads');
 app.use('/uploads/content/thumbnails', express.static(path.join(__dirname, 'uploads/content/thumbnails')));
 app.use('/uploads/content/previews', express.static(path.join(__dirname, 'uploads/content/previews')));
 app.use('/uploads/content/assets', express.static(path.join(__dirname, 'uploads/content/assets')));
+// Serve generated announcement videos
+app.use('/uploads/content/videos', express.static(path.join(__dirname, 'uploads/content/videos')));
 app.use('/uploads/content/sales-rep-thumbnails', express.static(path.join(__dirname, 'uploads/content/sales-rep-thumbnails')));
 app.use('/uploads/content/sales-rep-previews', express.static(path.join(__dirname, 'uploads/content/sales-rep-previews')));
 console.log('✅ Content creation static file serving configured');
