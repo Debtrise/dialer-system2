@@ -2,6 +2,8 @@ const path = require('path');
 const fs = require('fs').promises;
 const sharp = require('sharp'); // For image processing
 const ffmpeg = require('fluent-ffmpeg'); // For video processing
+const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
+ffmpeg.setFfprobePath(ffprobeInstaller.path);
 const { Op, Sequelize } = require('sequelize');
 const axios = require('axios');
 const crypto = require('crypto');
