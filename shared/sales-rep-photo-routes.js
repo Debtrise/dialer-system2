@@ -21,12 +21,29 @@ const upload = multer({
     const allowedTypes = /jpeg|jpg|png|gif|webp/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
-    
+
     if (mimetype && extname) {
       return cb(null, true);
     } else {
       cb(new Error('Only image files are allowed (jpeg, jpg, png, gif, webp)'));
     }
+  }
+});
+
+// Separate multer instance for CSV uploads
+const csvUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const isCsv =
+      file.mimetype === 'text/csv' ||
+      path.extname(file.originalname).toLowerCase() === '.csv';
+    if (isCsv) {
+      return cb(null, true);
+    }
+    cb(new Error('Only CSV files are allowed'));
   }
 });
 
@@ -425,7 +442,7 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
   });
 
   // Bulk upload photos using a CSV with name,email,photoUrl columns
-  router.post('/sales-rep-photos/bulk-csv', authenticateToken, upload.single('csv'), async (req, res) => {
+  router.post('/sales-rep-photos/bulk-csv', authenticateToken, csvUpload.single('csv'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ error: 'CSV file is required' });
