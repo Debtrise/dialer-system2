@@ -284,8 +284,14 @@ async videoToBase64(videoPath, maxSizeMB = 5) {
       data = Buffer.from(response.data);
     } else {
       const fsSync = require('fs');
-      if (!fsSync.existsSync(videoPath)) return null;
-      data = await fs.readFile(videoPath);
+      let localPath = videoPath;
+      // If the provided path is a public URL path, convert it to the local upload directory
+      if (!fsSync.existsSync(localPath) && videoPath.startsWith(this.publicPath)) {
+        const relative = videoPath.replace(this.publicPath, '').replace(/^\//, '');
+        localPath = path.join(this.uploadPath, relative);
+      }
+      if (!fsSync.existsSync(localPath)) return null;
+      data = await fs.readFile(localPath);
     }
     if (data.length > maxSizeMB * 1024 * 1024) {
       console.warn(`⚠️ Video too large to embed (${(data.length/1024/1024).toFixed(2)}MB)`);
@@ -2419,8 +2425,8 @@ async generateProjectImage(project, options = {}) {
           .on('error', reject);
       });
 
-      const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
-      const publicUrl = `${baseUrl}/uploads/content/videos/${outputName}`;
+      // Use relative URL so the content works regardless of host
+      const publicUrl = `${this.publicPath}/videos/${outputName}`;
 
       return { filePath: outputPath, publicUrl };
     } catch (err) {
