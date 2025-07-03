@@ -1946,20 +1946,20 @@ async generateElementHTML(element, options = {}) {
       const videoUrl = properties.src || properties.url || properties.videoUrl;
       if (videoUrl) {
         const absoluteVideoUrl = this.makeAbsoluteUrl(videoUrl, options.baseUrl);
-        const autoplay = properties.autoplay ? 'autoplay' : '';
-        const loop = properties.loop ? 'loop' : '';
-        const muted = properties.muted ? 'muted' : '';
-        
-        content = `<video class="element video-element" 
+        const autoplay = (properties.autoplay !== false) ? 'autoplay' : '';
+        const loop = (properties.loop !== false) ? 'loop' : '';
+        const muted = (properties.muted !== false) ? 'muted' : '';
+        const mimeType = this.getVideoMimeType(absoluteVideoUrl);
+
+        content = `<video class="element video-element"
                       data-element-id="${elementId}"
-                      src="${absoluteVideoUrl}"
                       style="${inlineStyles}"
                       ${autoplay} ${loop} ${muted}
-                      controls="false"
                       playsinline>
+                        <source src="${absoluteVideoUrl}" type="${mimeType}">
                     </video>`;
       } else {
-        content = `<div class="element video-element" 
+        content = `<div class="element video-element"
                       data-element-id="${elementId}"
                       style="${inlineStyles} background: #000; display: flex; align-items: center; justify-content: center; color: #fff;">
                       🎥 Video
@@ -2139,6 +2139,31 @@ makeAbsoluteUrl(url, baseUrl) {
   }
   
   return url;
+}
+
+/**
+ * Determine MIME type for a video URL or data URI
+ */
+getVideoMimeType(url) {
+  if (!url) return 'video/mp4';
+
+  // Data URI case
+  const dataMatch = url.match(/^data:([^;]+);/);
+  if (dataMatch) {
+    return dataMatch[1];
+  }
+
+  const ext = path.extname(url).toLowerCase();
+  switch (ext) {
+    case '.webm':
+      return 'video/webm';
+    case '.ogg':
+    case '.ogv':
+      return 'video/ogg';
+    case '.mp4':
+    default:
+      return 'video/mp4';
+  }
 }
 
 /**
