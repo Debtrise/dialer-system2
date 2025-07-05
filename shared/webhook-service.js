@@ -989,13 +989,13 @@ class WebhookService {
             OR LOWER(metadata->>'salesRepEmail') = $2
           )
           AND (
-            categories @> ARRAY['Sales Reps']::text[]
-            OR categories @> ARRAY['sales_reps']::text[]
-            OR categories @> ARRAY['sales-reps']::text[]
-            OR categories @> ARRAY['Sales Rep']::text[]
-            OR categories @> ARRAY['sales_rep']::text[]
-            OR categories @> ARRAY['salesrep']::text[]
-            OR categories @> ARRAY['SalesRep']::text[]
+            categories::text[] @> ARRAY['Sales Reps']::text[]
+            OR categories::text[] @> ARRAY['sales_reps']::text[]
+            OR categories::text[] @> ARRAY['sales-reps']::text[]
+            OR categories::text[] @> ARRAY['Sales Rep']::text[]
+            OR categories::text[] @> ARRAY['sales_rep']::text[]
+            OR categories::text[] @> ARRAY['salesrep']::text[]
+            OR categories::text[] @> ARRAY['SalesRep']::text[]
           )
         ORDER BY created_at DESC 
         LIMIT 1
@@ -1048,15 +1048,15 @@ class WebhookService {
             metadata->>'email' as email,
             categories
           FROM content_assets 
-          WHERE 
+          WHERE
             tenant_id = $1
             AND processing_status = 'completed'
             AND (
-              categories @> ARRAY['Sales Reps']::text[]
-              OR categories @> ARRAY['sales_reps']::text[]
-              OR categories @> ARRAY['sales-reps']::text[]
-              OR categories @> ARRAY['Sales Rep']::text[]
-              OR categories @> ARRAY['sales_rep']::text[]
+              categories::text[] @> ARRAY['Sales Reps']::text[]
+              OR categories::text[] @> ARRAY['sales_reps']::text[]
+              OR categories::text[] @> ARRAY['sales-reps']::text[]
+              OR categories::text[] @> ARRAY['Sales Rep']::text[]
+              OR categories::text[] @> ARRAY['sales_rep']::text[]
             )
           ORDER BY created_at DESC 
           LIMIT 10
