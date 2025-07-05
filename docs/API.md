@@ -153,3 +153,12 @@ Base path: `/api/webhooks/announcement`
 | ------ | -------- | ----------- |
 | `GET` | `/projects` | List announcement projects created by webhook events. Returns `{ "projects": [], "totalCount": 0 }`. |
 
+### Simplified Announcement API
+
+These endpoints combine webhook processing, sales rep photos and content creation to immediately publish announcements to OptiSigns.
+
+| Method | Endpoint | Description |
+| ------ | -------- | ----------- |
+| `POST` | `/announcement/video` | Create an announcement from a video project and push to selected displays. |
+| `POST` | `/announcement/image` | Create an announcement from an image-only project and push to selected displays. |
+

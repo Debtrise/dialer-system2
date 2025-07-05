@@ -469,6 +469,100 @@ function initializeAnnouncementRoutes(app, authenticateToken, webhookModels, web
     }
   });
 
+  /**
+   * Simple endpoint to trigger an announcement using a project and push to OptiSigns.
+   * Expects { projectId, repEmail, variables, displayIds } in the body.
+   * This route can be used for both video and image based announcements.
+   */
+  async function handleSimpleAnnouncement(req, res, type) {
+    try {
+      if (!contentService || !optisignsService) {
+        return res.status(503).json({ error: 'Content or OptiSigns service not available' });
+      }
+
+      const { projectId, repEmail, variables = {}, displayIds = [] } = req.body;
+
+      if (!projectId) {
+        return res.status(400).json({ error: 'projectId is required' });
+      }
+
+      const tenantId = req.user.tenantId;
+      const projectName = `Announcement ${new Date().toISOString()}`;
+
+      const project = await webhookService.duplicateProjectForTenant(
+        projectId,
+        tenantId,
+        projectName,
+        req.user.id || 1
+      );
+
+      if (repEmail) {
+        try {
+          const repPhoto = await webhookService.getSalesRepPhoto(tenantId, repEmail);
+          if (repPhoto && repPhoto.url) {
+            variables.rep_photo = repPhoto.url;
+          }
+        } catch (err) {
+          console.error('Sales rep photo lookup failed:', err.message);
+        }
+      }
+
+      if (!variables.rep_photo) {
+        const fallback = await webhookService.getFallbackPhoto(tenantId);
+        if (fallback && fallback.url) {
+          variables.rep_photo = fallback.url;
+        }
+      }
+
+      await webhookService.injectVariablesIntoProject(project.id, variables, tenantId);
+
+      const exportInfo = await contentService.generateProjectExport(
+        project.id,
+        tenantId,
+        { format: 'html', quality: 'high', optimizeForDigitalSignage: true }
+      );
+
+      let displays = [];
+      if (Array.isArray(displayIds) && displayIds.length > 0) {
+        displays = await webhookModels.OptisignsDisplay.findAll({
+          where: { id: displayIds, tenant_id: tenantId.toString() }
+        });
+      } else {
+        displays = await webhookModels.OptisignsDisplay.findAll({
+          where: { tenant_id: tenantId.toString(), isActive: true }
+        });
+      }
+
+      const publishResult = await webhookService.publishToOptisignsWithRetry(
+        project,
+        exportInfo,
+        displays,
+        { takeover: { priority: 'NORMAL', duration: 30 } },
+        tenantId,
+        {}
+      );
+
+      res.json({
+        success: true,
+        type,
+        projectId: project.id,
+        exportId: exportInfo.exportId,
+        publishResult
+      });
+    } catch (error) {
+      console.error('Error processing simple announcement:', error);
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  app.post('/api/announcement/video', authenticateToken, (req, res) =>
+    handleSimpleAnnouncement(req, res, 'video')
+  );
+
+  app.post('/api/announcement/image', authenticateToken, (req, res) =>
+    handleSimpleAnnouncement(req, res, 'image')
+  );
+
   console.log('Announcement-specific routes initialized successfully');
 }
 
