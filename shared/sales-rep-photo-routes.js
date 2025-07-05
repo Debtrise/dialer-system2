@@ -103,7 +103,11 @@ async function findSalesRepAsset(ContentAsset, sequelize, whereConditions) {
   const rawQuery = `
     SELECT * FROM content_assets 
     WHERE (
+
+      (categories::varchar[] @> ARRAY['Sales Reps']::varchar[] OR categories::varchar[] @> ARRAY['sales_reps']::varchar[])
+
       (categories::text[] @> ARRAY['Sales Reps']::text[] OR categories::text[] @> ARRAY['sales_reps']::text[])
+
       OR 
       (LOWER(categories::text) LIKE '%sales rep%' OR LOWER(categories::text) LIKE '%sales_rep%')
     )

@@ -11,10 +11,10 @@ module.exports = function(app, sequelize, authenticateToken, contentService, opt
     return await ContentAsset.findOne({
       where: {
         tenantId: tenantId.toString(),
-        // Cast categories to text[] so overlap works regardless of column type
+        // Cast categories to varchar[] so overlap works regardless of column type
         [Op.and]: [
           sequelize.where(
-            sequelize.cast(sequelize.col('categories'), 'text[]'),
+            sequelize.cast(sequelize.col('categories'), 'varchar[]'),
             { [Op.overlap]: ['Sales Reps', 'sales_reps'] }
           )
         ],
