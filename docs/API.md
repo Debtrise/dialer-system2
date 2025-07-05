@@ -153,3 +153,20 @@ Base path: `/api/webhooks/announcement`
 | ------ | -------- | ----------- |
 | `GET` | `/projects` | List announcement projects created by webhook events. Returns `{ "projects": [], "totalCount": 0 }`. |
 
+## Simple Announcement Endpoints
+
+These routes provide a quick way to publish an announcement using a sales rep photo.
+
+| Method | Endpoint | Description |
+| ------ | -------- | ----------- |
+| `POST` | `/announcement/video` | Generate a short video with the sales rep photo and push it to the given displays. |
+| `POST` | `/announcement/image` | Push the sales rep photo as an image to the given displays. |
+
+Both endpoints accept a JSON body with:
+
+- `repEmail` (required) – email used to locate the sales rep photo.
+- `repName` (optional) – name shown on the video.
+- `dealAmount` (optional) – amount text for the video endpoint.
+- `companyName` (optional) – company name for the video endpoint.
+- `displayIds` (required) – one or more OptiSigns display IDs.
+

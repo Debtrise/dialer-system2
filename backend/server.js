@@ -487,6 +487,20 @@ async function initializeModules() {
     console.error('Error initializing Sales Rep Photo module:', error);
   }
 
+  // Initialize simple Announcement routes
+  try {
+    if (contentService && optisignsService) {
+      console.log('Initializing Announcement routes...');
+      const initAnnouncementRoutes = require('../shared/announcement-routes');
+      initAnnouncementRoutes(app, sequelize, authenticateToken, contentService, optisignsService);
+      console.log('Announcement routes initialized successfully');
+    } else {
+      console.log('Skipping Announcement routes (dependencies missing)');
+    }
+  } catch (error) {
+    console.error('Error initializing Announcement routes:', error);
+  }
+
   // Initialize User Routes
   console.log('Initializing User Routes module...');
   const userRoutes = require('../shared/user-routes');
