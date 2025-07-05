@@ -3,11 +3,11 @@
 These endpoints let you upload and manage sales rep photos used in announcement templates. All routes require Bearer authentication and are prefixed with `/api`.
 
 When using the Content Creator, you can place a photo on the canvas by adding an element with `elementType: "sales_rep_photo"`. The element automatically binds to the `{rep_photo}` variable so that the correct representative's image is displayed when a deal is closed.
+You can upload photos one at a time using `/sales-rep-photos/upload` or upload many using a CSV at `/sales-rep-photos/bulk-csv`.
 
 | Method | Path | Description |
 | ------ | ---- | ----------- |
 | `POST` | `/sales-rep-photos/upload` | Upload a photo for a single sales rep. Form fields: `photo`, `repEmail`, optional `repName`. |
-| `POST` | `/sales-rep-photos/bulk-upload` | Bulk upload multiple photos. Accepts `photos` files array and `mappings` JSON describing `{filename,email,name}`. |
 | `POST` | `/sales-rep-photos/bulk-csv` | Upload a CSV of reps with `name`, `email` and `photoUrl` columns to create users and fetch their photos. |
 | `POST` | `/sales-rep-photos/fallback` | Set or replace the default fallback photo shown when a rep photo is missing. |
 | `GET` | `/sales-rep-photos/fallback` | Retrieve the current fallback photo. Returns 404 if not configured. |
