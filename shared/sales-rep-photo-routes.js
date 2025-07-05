@@ -103,7 +103,7 @@ async function findSalesRepAsset(ContentAsset, sequelize, whereConditions) {
   const rawQuery = `
     SELECT * FROM content_assets 
     WHERE (
-      (categories::text[] @> ARRAY['Sales Reps']::text[] OR categories::text[] @> ARRAY['sales_reps']::text[])
+      (categories::varchar[] @> ARRAY['Sales Reps']::varchar[] OR categories::varchar[] @> ARRAY['sales_reps']::varchar[])
       OR 
       (LOWER(categories::text) LIKE '%sales rep%' OR LOWER(categories::text) LIKE '%sales_rep%')
     )
@@ -170,7 +170,7 @@ async function findAllSalesRepAssets(ContentAsset, sequelize, whereConditions, o
   const rawQuery = `
     SELECT * FROM content_assets
     WHERE (
-      (categories::text[] @> ARRAY['Sales Reps']::text[] OR categories::text[] @> ARRAY['sales_reps']::text[])
+      (categories::varchar[] @> ARRAY['Sales Reps']::varchar[] OR categories::varchar[] @> ARRAY['sales_reps']::varchar[])
       OR
       (LOWER(categories::text) LIKE '%sales rep%' OR LOWER(categories::text) LIKE '%sales_rep%')
     )
@@ -271,7 +271,7 @@ async function countSalesRepAssets(ContentAsset, sequelize, whereConditions, opt
   const rawQuery = `
     SELECT COUNT(*) as count FROM content_assets 
     WHERE (
-      (categories::text[] @> ARRAY['Sales Reps']::text[] OR categories::text[] @> ARRAY['sales_reps']::text[])
+      (categories::varchar[] @> ARRAY['Sales Reps']::varchar[] OR categories::varchar[] @> ARRAY['sales_reps']::varchar[])
       OR 
       (LOWER(categories::text) LIKE '%sales rep%' OR LOWER(categories::text) LIKE '%sales_rep%')
     )
