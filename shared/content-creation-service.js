@@ -1978,12 +1978,14 @@ async generateElementHTML(element, options = {}) {
         const autoplay = (properties.autoplay !== false) ? 'autoplay' : '';
         const loop = (properties.loop !== false) ? 'loop' : '';
         const muted = (properties.muted !== false) ? 'muted' : '';
+        const controls = (properties.controls !== false) ? 'controls' : '';
+        const preload = properties.preload || 'auto';
         const mimeType = this.getVideoMimeType(absoluteVideoUrl);
 
         content = `<video class="element video-element"
                       data-element-id="${elementId}"
                       style="${inlineStyles}"
-                      ${autoplay} ${loop} ${muted}
+                      ${autoplay} ${loop} ${muted} ${controls} preload="${preload}"
                       playsinline>
                         <source src="${absoluteVideoUrl}" type="${mimeType}">
                     </video>`;
