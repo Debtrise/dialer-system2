@@ -31,6 +31,8 @@ Base path: `/api/content`
 
 ### Templates
 
+*Deprecated:* These endpoints remain for legacy integrations but projects are now preferred.
+
 | Method | Endpoint | Description |
 | ------ | -------- | ----------- |
 | `GET` | `/templates` | List templates. Supports filtering by category, visibility and search. |
@@ -140,4 +142,12 @@ Base path: `/api/optisigns`
 | Method | Endpoint | Description |
 | ------ | -------- | ----------- |
 | `POST` | `/displays/:id/push` | Push content to a display immediately or by schedule. |
+
+## Announcement Webhooks
+
+Base path: `/api/webhooks/announcement`
+
+| Method | Endpoint | Description |
+| ------ | -------- | ----------- |
+| `GET` | `/projects` | List announcement projects created by webhook events. Returns `{ "projects": [], "totalCount": 0 }`. |
 
