@@ -173,36 +173,42 @@ module.exports = function(app, sequelize, authenticateToken, contentIntegration 
 function initializeAnnouncementRoutes(app, authenticateToken, webhookModels, webhookService, contentService, optisignsService) {
   console.log('Initializing announcement-specific routes...');
 
-  // Get announcement templates available for webhooks
-  app.get('/api/webhooks/announcement/templates', authenticateToken, async (req, res) => {
+  // Get announcement projects available for webhooks
+  app.get('/api/webhooks/announcement/projects', authenticateToken, async (req, res) => {
     try {
       if (!contentService) {
         return res.status(503).json({ error: 'Content Creator service not available' });
       }
 
       const tenantId = req.user.tenantId;
-      const templates = await contentService.getTemplates(tenantId, {
-        category: 'announcement',
-        isPublic: true
+      const projects = await contentService.models.ContentProject.findAll({
+        where: {
+          category: 'announcement',
+          [sequelize.Sequelize.Op.or]: [
+            { tenantId },
+            { tenantId: 'system' }
+          ]
+        },
+        order: [['created_at', 'DESC']],
+        attributes: ['id', 'name', 'description', 'thumbnailUrl', 'category', 'tags']
       });
 
-      // Transform templates for webhook configuration UI
-      const webhookTemplates = templates.templates.map(template => ({
-        id: template.id,
-        name: template.name,
-        description: template.description,
-        variables: template.variables || [],
-        thumbnail: template.thumbnailUrl,
-        category: template.category,
-        tags: template.tags
+      const webhookProjects = projects.map(p => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        variables: p.variables || [],
+        thumbnail: p.thumbnailUrl,
+        category: p.category,
+        tags: p.tags
       }));
 
       res.json({
-        templates: webhookTemplates,
-        totalCount: templates.totalCount
+        projects: webhookProjects,
+        totalCount: webhookProjects.length
       });
     } catch (error) {
-      console.error('Error getting announcement templates:', error);
+      console.error('Error getting announcement projects:', error);
       res.status(400).json({ error: error.message });
     }
   });
@@ -357,7 +363,7 @@ function initializeAnnouncementRoutes(app, authenticateToken, webhookModels, web
           announcementConfig: {
             enabled: true,
             contentCreator: {
-              templateId: null, // Will be selected by user
+              projectId: null, // Will be selected by user
               variableMapping: {
                 rep_name: 'rep_name',
                 deal_amount: 'deal_amount',
@@ -402,7 +408,7 @@ function initializeAnnouncementRoutes(app, authenticateToken, webhookModels, web
           announcementConfig: {
             enabled: true,
             contentCreator: {
-              templateId: null,
+              projectId: null,
               variableMapping: {
                 employee_name: 'name',
                 position: 'position',
@@ -432,7 +438,7 @@ function initializeAnnouncementRoutes(app, authenticateToken, webhookModels, web
           announcementConfig: {
             enabled: true,
             contentCreator: {
-              templateId: null,
+              projectId: null,
               variableMapping: {
                 milestone_type: 'milestone_type',
                 achievement: 'achievement',
@@ -503,16 +509,16 @@ async function testAnnouncementConfiguration(webhook, payload, contentService, o
     };
 
     // Test content service availability
-    if (contentService && webhook.announcementConfig.contentCreator.templateId) {
+    if (contentService && webhook.announcementConfig.contentCreator.projectId) {
       testResult.simulationResults.contentGeneration = {
-        templateExists: true, // Would verify in real implementation
+        projectExists: true, // Would verify in real implementation
         variablesCompatible: true,
         estimatedGenerationTime: '2-5 seconds'
       };
     } else if (!contentService) {
       testResult.errors.push('Content Creator service not available');
     } else {
-      testResult.warnings.push('No template selected for content generation');
+      testResult.warnings.push('No project selected for content generation');
     }
 
     // Test display selection

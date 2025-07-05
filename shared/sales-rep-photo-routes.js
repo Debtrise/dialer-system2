@@ -164,24 +164,32 @@ async function findSalesRepAsset(ContentAsset, sequelize, whereConditions) {
  * FIXED: Enhanced findAll function with database type compatibility using raw SQL
  */
 async function findAllSalesRepAssets(ContentAsset, sequelize, whereConditions, options = {}) {
-  const { limit = 50, offset = 0 } = options;
+  const { limit = 50, offset = 0, search = '' } = options;
   const tenantId = whereConditions.tenantId;
-  
+
   const rawQuery = `
-    SELECT * FROM content_assets 
+    SELECT * FROM content_assets
     WHERE (
       (categories @> ARRAY['Sales Reps']::text[] OR categories @> ARRAY['sales_reps']::text[])
-      OR 
+      OR
       (LOWER(categories::text) LIKE '%sales rep%' OR LOWER(categories::text) LIKE '%sales_rep%')
     )
     AND tenant_id = $1
-    ORDER BY created_at DESC 
+    AND ($4 = '' OR
+      LOWER(metadata->>'repEmail') LIKE $4 OR
+      LOWER(metadata->>'rep_email') LIKE $4 OR
+      LOWER(metadata->>'email') LIKE $4 OR
+      LOWER(metadata->>'repName') LIKE $4 OR
+      LOWER(name) LIKE $4
+    )
+    ORDER BY created_at DESC
     LIMIT $2 OFFSET $3
   `;
   
   try {
+    const searchParam = `%${search.toLowerCase()}%`;
     const [results] = await sequelize.query(rawQuery, {
-      bind: [tenantId, limit, offset],
+      bind: [tenantId, limit, offset, searchParam],
       type: sequelize.QueryTypes.SELECT
     });
 
@@ -194,12 +202,18 @@ async function findAllSalesRepAssets(ContentAsset, sequelize, whereConditions, o
         SELECT * FROM content_assets
         WHERE LOWER(categories::text) LIKE '%sales rep%'
         AND tenant_id = $1
+        AND ($4 = '' OR
+             LOWER(metadata->>'repEmail') LIKE $4 OR
+             LOWER(metadata->>'rep_email') LIKE $4 OR
+             LOWER(metadata->>'email') LIKE $4 OR
+             LOWER(metadata->>'repName') LIKE $4 OR
+             LOWER(name) LIKE $4 )
         ORDER BY created_at DESC
         LIMIT $2 OFFSET $3
       `;
 
       const [fallbackResults] = await sequelize.query(fallbackQuery, {
-        bind: [tenantId, limit, offset],
+        bind: [tenantId, limit, offset, searchParam],
         type: sequelize.QueryTypes.SELECT
       });
 
@@ -250,7 +264,8 @@ async function findAllSalesRepAssets(ContentAsset, sequelize, whereConditions, o
 /**
  * FIXED: Enhanced count function with database type compatibility using raw SQL
  */
-async function countSalesRepAssets(ContentAsset, sequelize, whereConditions) {
+async function countSalesRepAssets(ContentAsset, sequelize, whereConditions, options = {}) {
+  const { search = '' } = options;
   const tenantId = whereConditions.tenantId;
   
   const rawQuery = `
@@ -261,11 +276,19 @@ async function countSalesRepAssets(ContentAsset, sequelize, whereConditions) {
       (LOWER(categories::text) LIKE '%sales rep%' OR LOWER(categories::text) LIKE '%sales_rep%')
     )
     AND tenant_id = $1
+    AND ($2 = '' OR
+      LOWER(metadata->>'repEmail') LIKE $2 OR
+      LOWER(metadata->>'rep_email') LIKE $2 OR
+      LOWER(metadata->>'email') LIKE $2 OR
+      LOWER(metadata->>'repName') LIKE $2 OR
+      LOWER(name) LIKE $2
+    )
   `;
-  
+
   try {
+    const searchParam = `%${search.toLowerCase()}%`;
     const [results] = await sequelize.query(rawQuery, {
-      bind: [tenantId],
+      bind: [tenantId, searchParam],
       type: sequelize.QueryTypes.SELECT
     });
     
@@ -274,14 +297,21 @@ async function countSalesRepAssets(ContentAsset, sequelize, whereConditions) {
     console.error('❌ Error in countSalesRepAssets:', error.message);
     // Fallback to simple text search only
     const fallbackQuery = `
-      SELECT COUNT(*) as count FROM content_assets 
+      SELECT COUNT(*) as count FROM content_assets
       WHERE LOWER(categories::text) LIKE '%sales rep%'
       AND tenant_id = $1
+      AND ($2 = '' OR
+        LOWER(metadata->>'repEmail') LIKE $2 OR
+        LOWER(metadata->>'rep_email') LIKE $2 OR
+        LOWER(metadata->>'email') LIKE $2 OR
+        LOWER(metadata->>'repName') LIKE $2 OR
+        LOWER(name) LIKE $2
+      )
     `;
     
     try {
       const [fallbackResults] = await sequelize.query(fallbackQuery, {
-        bind: [tenantId],
+        bind: [tenantId, searchParam],
         type: sequelize.QueryTypes.SELECT
       });
       
@@ -535,19 +565,26 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
   // Get all sales rep photos - ENHANCED with compatibility
   router.get('/sales-rep-photos', authenticateToken, async (req, res) => {
     try {
-      const { page = 1, limit = 20 } = req.query;
+      const { page = 1, limit = 20, search = '' } = req.query;
       const offset = (parseInt(page) - 1) * parseInt(limit);
 
-      const assets = await findAllSalesRepAssets(ContentAsset, sequelize, {
-        tenantId: req.user.tenantId
-      }, {
-        limit: parseInt(limit),
-        offset
-      });
+      const assets = await findAllSalesRepAssets(
+        ContentAsset,
+        sequelize,
+        { tenantId: req.user.tenantId },
+        {
+          limit: parseInt(limit),
+          offset,
+          search: search.toString()
+        }
+      );
 
-      const total = await countSalesRepAssets(ContentAsset, sequelize, {
-        tenantId: req.user.tenantId
-      });
+      const total = await countSalesRepAssets(
+        ContentAsset,
+        sequelize,
+        { tenantId: req.user.tenantId },
+        { search: search.toString() }
+      );
 
       const processedAssets = assets.map(asset => ({
         id: asset.id,

@@ -1,6 +1,8 @@
 # Sales Rep Photo API
 
-These endpoints let you upload and manage sales rep photos used in announcement templates. All routes require Bearer authentication and are prefixed with `/api`.
+These endpoints let you upload and manage **sales rep photo** assets used in announcement projects. All routes require Bearer authentication and are prefixed with `/api`.
+
+Only one photo is stored per sales representative. Uploading a new photo for the same email replaces the previous asset.
 
 When using the Content Creator, you can place a photo on the canvas by adding an element with `elementType: "sales_rep_photo"`. The element automatically binds to the `{rep_photo}` variable so that the correct representative's image is displayed when a deal is closed.
 You can upload photos one at a time using `/sales-rep-photos/upload` or upload many using a CSV at `/sales-rep-photos/bulk-csv`.
@@ -12,9 +14,11 @@ You can upload photos one at a time using `/sales-rep-photos/upload` or upload m
 | `POST` | `/sales-rep-photos/fallback` | Set or replace the default fallback photo shown when a rep photo is missing. |
 | `GET` | `/sales-rep-photos/fallback` | Retrieve the current fallback photo. Returns 404 if not configured. |
 | `GET` | `/sales-rep-photos/by-email/:email` | Fetch a photo asset by rep email address. |
-| `GET` | `/sales-rep-photos` | List uploaded sales rep photos with pagination. Supports `page` and `limit` query params. |
+| `GET` | `/sales-rep-photos` | List uploaded sales rep photos. Supports `page`, `limit` and `search` query params. |
 | `POST` | `/sales-rep-photos/generate-video` | Produce a celebration video using the rep photo. Body fields: `repEmail`, optional `repName`, `dealAmount`, `companyName`. |
 | `DELETE` | `/sales-rep-photos/:id` | Delete a photo asset by ID. |
+
+The optional `search` parameter matches against the representative's email or name.
 
 ### Fallback photo
 If a sales rep photo isn't found for the provided email, the webhook logs a

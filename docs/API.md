@@ -29,12 +29,14 @@ Base path: `/api/content`
 | `GET` | `/public/:exportId` | Serve published content by export ID. |
 | `GET` | `/debug/:exportId` | Debug view for a published export. |
 
-### Templates
+### Templates (Deprecated)
+
+Template endpoints remain for backwards compatibility but the preferred workflow is to create projects instead.
 
 | Method | Endpoint | Description |
 | ------ | -------- | ----------- |
-| `GET` | `/templates` | List templates. Supports filtering by category, visibility and search. |
-| `GET` | `/templates/:templateId` | Retrieve a single template. |
+| `GET` | `/templates` | List templates. |
+| `GET` | `/templates/:templateId` | Retrieve a template. |
 | `POST` | `/templates` | Create a template. |
 
 ### Projects
