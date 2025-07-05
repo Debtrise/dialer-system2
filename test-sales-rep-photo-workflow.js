@@ -67,8 +67,8 @@ async function createProject() {
   };
 
   const res = await api.post('/content/projects', projectData);
-  console.log('✅ Project created:', res.data.id);
-  return res.data;
+  console.log('✅ Project created:', res.data.project.id);
+  return res.data.project;
 }
 
 async function createWebhook(projectId) {
