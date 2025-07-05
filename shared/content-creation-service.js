@@ -583,8 +583,8 @@ getImageExtension(contentType, url) {
 
   async getProjectWithElements(projectId, tenantId) {
     try {
-      const project = await this.models.ContentProject.findOne({
-        where: { id: projectId, tenantId },
+      const query = {
+        where: { id: projectId },
         include: [{
           model: this.models.ContentElement,
           as: 'elements',
@@ -594,7 +594,21 @@ getImageExtension(contentType, url) {
             as: 'asset'
           }]
         }]
-      });
+      };
+
+      if (tenantId) {
+        query.where.tenantId = tenantId;
+      }
+
+      let project = await this.models.ContentProject.findOne(query);
+
+      // Fallback: if not found and tenantId specified, try without tenant filter
+      if (!project && tenantId) {
+        project = await this.models.ContentProject.findOne({
+          ...query,
+          where: { id: projectId }
+        });
+      }
 
       if (!project) {
         throw new Error('Project not found');
