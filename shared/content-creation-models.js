@@ -640,7 +640,8 @@ elementType: {
       defaultValue: []
     },
     categories: {
-      type: DataTypes.ARRAY(DataTypes.STRING),
+      // Use TEXT[] to avoid type mismatches when querying
+      type: DataTypes.ARRAY(DataTypes.TEXT),
       defaultValue: []
     },
     isPublic: {
