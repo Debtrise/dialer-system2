@@ -322,6 +322,32 @@ class OptisignsService {
   }
 
   /**
+   * Get displays from the local database with optional filters
+   */
+  async getDisplays(tenantId, filters = {}) {
+    try {
+      const { Op } = require('sequelize');
+
+      const where = { tenantId: tenantId.toString() };
+      if (filters.isActive !== undefined) where.isActive = filters.isActive;
+      if (filters.isOnline !== undefined) where.isOnline = filters.isOnline;
+      if (filters.status) where.status = filters.status;
+      if (filters.location) {
+        where.location = { [Op.iLike]: `%${filters.location}%` };
+      }
+
+      const query = { where, order: [['name', 'ASC']] };
+      if (filters.limit) query.limit = parseInt(filters.limit);
+      if (filters.offset) query.offset = parseInt(filters.offset);
+
+      return await this.models.OptisignsDisplay.findAll(query);
+    } catch (error) {
+      console.error('Error getting displays:', error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Helper method to get file extension
    */
   getFileExtension(fileName) {
