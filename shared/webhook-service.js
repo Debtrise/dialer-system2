@@ -400,23 +400,33 @@ class WebhookService {
           );
         }
 
-        const projectData = {
-          name: projectName,
-          description: `Automatically generated from webhook: ${webhookEndpoint.name}`,
-          templateId: announcementConfig.contentCreator.templateId,
-          status: 'active',
-          metadata: {
-            source: 'webhook_announcement',
-            webhookEndpointId: webhookEndpoint.id,
-            variables: extractedVariables.variables
-          }
-        };
+        const baseProjectId = announcementConfig.contentCreator.projectId;
 
-        contentProject = await this.contentService.createProject(
-          webhookEndpoint.tenantId,
-          projectData,
-          1 // System user ID
-        );
+        if (baseProjectId) {
+          contentProject = await this.duplicateProjectForTenant(
+            baseProjectId,
+            webhookEndpoint.tenantId,
+            projectName,
+            1
+          );
+        } else {
+          const projectData = {
+            name: projectName,
+            description: `Automatically generated from webhook: ${webhookEndpoint.name}`,
+            status: 'active',
+            metadata: {
+              source: 'webhook_announcement',
+              webhookEndpointId: webhookEndpoint.id,
+              variables: extractedVariables.variables
+            }
+          };
+
+          contentProject = await this.contentService.createProject(
+            webhookEndpoint.tenantId,
+            projectData,
+            1 // System user ID
+          );
+        }
         
         announcementMetricData.contentProjectId = contentProject.id;
         console.log('✅ Created content project:', contentProject.id);
@@ -1180,6 +1190,76 @@ class WebhookService {
         thumbnailUrl: DEFAULT_FALLBACK_PHOTO
       };
     }
+  }
+
+  /**
+   * Duplicate a system project for the specified tenant
+   */
+  async duplicateProjectForTenant(baseProjectId, tenantId, newName, userId = 1) {
+    if (!this.contentService) {
+      throw new Error('Content service not available');
+    }
+
+    const baseProject = await this.contentService.getProjectWithElements(
+      baseProjectId,
+      'system'
+    );
+
+    if (!baseProject) {
+      throw new Error('Base project not found');
+    }
+
+    const project = await this.contentService.models.ContentProject.create({
+      tenantId,
+      name: newName,
+      description: `Copy of ${baseProject.name}`,
+      canvasSize: baseProject.canvasSize,
+      responsiveBreakpoints: baseProject.responsiveBreakpoints,
+      canvasBackground: baseProject.canvasBackground,
+      projectData: baseProject.projectData,
+      variables: baseProject.variables,
+      globalStyles: baseProject.globalStyles,
+      interactions: baseProject.interactions,
+      status: 'draft',
+      createdBy: userId,
+      lastEditedBy: userId,
+      tags: baseProject.tags
+    });
+
+    if (baseProject.elements && baseProject.elements.length > 0) {
+      for (const element of baseProject.elements) {
+        await this.contentService.models.ContentElement.create({
+          projectId: project.id,
+          elementType: element.elementType,
+          position: element.position,
+          size: element.size,
+          rotation: element.rotation,
+          scale: element.scale,
+          skew: element.skew,
+          opacity: element.opacity,
+          properties: element.properties,
+          styles: element.styles,
+          responsiveStyles: element.responsiveStyles,
+          animations: element.animations,
+          interactions: element.interactions,
+          variables: element.variables,
+          conditions: element.conditions,
+          constraints: element.constraints,
+          isLocked: element.isLocked,
+          isVisible: element.isVisible,
+          isInteractive: element.isInteractive,
+          layerOrder: element.layerOrder,
+          groupId: element.groupId,
+          parentId: element.parentId,
+          assetId: element.assetId,
+          linkedElements: element.linkedElements,
+          customCSS: element.customCSS,
+          customJS: element.customJS
+        });
+      }
+    }
+
+    return project;
   }
 
   /**

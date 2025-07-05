@@ -465,21 +465,21 @@ async function initializeModules() {
       console.log('Sales Rep Photo module initialized successfully');
       setTimeout(async () => {
         try {
-          const existingTemplate = await sequelize.models.ContentTemplate?.findOne({
-            where: { 
+          const existingProject = await sequelize.models.ContentProject?.findOne({
+            where: {
               name: 'Deal Closed Celebration',
               tenantId: 'system'
             }
           });
 
-          if (!existingTemplate) {
-            console.log('🚀 Setting up Sales Rep Photo template...');
+          if (!existingProject) {
+            console.log('🚀 Setting up Sales Rep Photo project...');
             const { setupSalesRepPhotoFeature } = require('../shared/setup/setup-sales-rep-photos');
             await setupSalesRepPhotoFeature(sequelize, contentService);
-            console.log('✅ Sales Rep Photo template created!');
+            console.log('✅ Sales Rep Photo project created!');
           }
         } catch (error) {
-          console.error('⚠️ Template setup error:', error.message);
+          console.error('⚠️ Project setup error:', error.message);
         }
       }, 5000);
     }
