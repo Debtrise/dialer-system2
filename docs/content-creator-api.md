@@ -13,15 +13,15 @@ These endpoints are primarily used by OptiSigns to pull content from the system.
 | `GET` | `/api/content/public/:exportId` | Serve exported content for anonymous access. |
 | `GET` | `/api/content/optisync/status` | Check OptiSync integration status. |
 
-## Template Endpoints
-Manage templates for reusable layouts.
+## Template Endpoints (Deprecated)
+Template-based workflows have been replaced by **projects**. Existing endpoints continue to function but new integrations should rely on the project endpoints below.
 
 | Method | Path | Description |
 | ------ | ---- | ----------- |
-| `GET` | `/api/content/templates` | List templates with optional filters. |
-| `GET` | `/api/content/templates/:templateId` | Retrieve a single template. |
-| `POST` | `/api/content/templates` | Create a new template. |
-| `PUT` | `/api/content/templates/:templateId` | Update an existing template. |
+| `GET` | `/api/content/templates` | List templates. |
+| `GET` | `/api/content/templates/:templateId` | Retrieve a template. |
+| `POST` | `/api/content/templates` | Create a template. |
+| `PUT` | `/api/content/templates/:templateId` | Update a template. |
 
 ## Project Endpoints
 Projects contain elements that make up a piece of content.

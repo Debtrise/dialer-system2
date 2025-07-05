@@ -4,24 +4,24 @@ const setupSalesRepPhotoFeature = async (sequelize, contentService) => {
   
   try {
     // 1. First check if template already exists
-    const existingTemplate = await sequelize.models.ContentTemplate?.findOne({
-      where: { 
+    const existingProject = await sequelize.models.ContentProject?.findOne({
+      where: {
         name: 'Deal Closed Celebration',
         tenantId: 'system'
       }
     });
 
-    if (existingTemplate) {
-      console.log('✅ Template already exists, skipping creation');
+    if (existingProject) {
+      console.log('✅ Project already exists, skipping creation');
       return {
-        templateId: existingTemplate.id,
-        message: 'Template already exists',
+        projectId: existingProject.id,
+        message: 'Project already exists',
         skipped: true
       };
     }
 
-    // 2. Define the template directly here to avoid import issues
-    const templateData = {
+    // 2. Define the project directly here to avoid import issues
+    const projectData = {
       name: "Deal Closed Celebration",
       description: "Celebrate closed deals with sales rep photo and achievement details",
       category: "announcement",
@@ -78,7 +78,7 @@ const setupSalesRepPhotoFeature = async (sequelize, contentService) => {
         height: 1080
       },
       backgroundColor: "#1a1a2e",
-      templateData: {
+      projectData: {
         elements: {
           background: {
             elementType: "shape",
@@ -331,21 +331,20 @@ const setupSalesRepPhotoFeature = async (sequelize, contentService) => {
       }
     };
     
-    console.log('📝 Creating Deal Closed Celebration template...');
-    console.log('Template data:', {
-      name: templateData.name,
-      category: templateData.category,
-      elementsCount: Object.keys(templateData.templateData.elements).length
+    console.log('📝 Creating Deal Closed Celebration project...');
+    console.log('Project data:', {
+      name: projectData.name,
+      category: projectData.category,
+      elementsCount: Object.keys(projectData.projectData.elements).length
     });
-    
-    // FIXED: Correct parameter order - (tenantId, userId, templateData)
-    const createdTemplate = await contentService.createTemplate(
-      'system', // tenantId
-      1, // userId
-      templateData // templateData
+
+    const createdProject = await contentService.createProject(
+      'system',
+      projectData,
+      1
     );
-    
-    console.log(`✅ Template created with ID: ${createdTemplate.id}`);
+
+    console.log(`✅ Project created with ID: ${createdProject.id}`);
     
     // 3. Create webhook preset configuration
     const webhookPreset = {
@@ -355,8 +354,8 @@ const setupSalesRepPhotoFeature = async (sequelize, contentService) => {
       announcementConfig: {
         enabled: true,
         contentCreator: {
-          templateId: createdTemplate.id,
-          templateName: "Deal Closed Celebration",
+          projectId: createdProject.id,
+          projectName: "Deal Closed Celebration",
           generateNewContent: true,
           variableMapping: {
             rep_name: "rep_name",
@@ -396,13 +395,13 @@ const setupSalesRepPhotoFeature = async (sequelize, contentService) => {
     console.log('✅ Sales Rep Photo Feature setup complete!');
     
     return {
-      templateId: createdTemplate.id,
+      projectId: createdProject.id,
       webhookPreset: webhookPreset,
       setupInstructions: {
         step1: 'Upload sales rep photos using the /api/sales-rep-photos/upload endpoint',
         step2: 'Set a fallback photo using /api/sales-rep-photos/fallback',
         step3: 'Create a webhook with the deal_closed_with_photo preset',
-        step4: 'Map your webhook payload fields to match the template variables'
+        step4: 'Map your webhook payload fields to match the project variables'
       }
     };
     
