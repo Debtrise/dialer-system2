@@ -989,13 +989,13 @@ class WebhookService {
             OR LOWER(metadata->>'salesRepEmail') = $2
           )
           AND (
-            categories::text[] @> ARRAY['Sales Reps']::text[]
-            OR categories::text[] @> ARRAY['sales_reps']::text[]
-            OR categories::text[] @> ARRAY['sales-reps']::text[]
-            OR categories::text[] @> ARRAY['Sales Rep']::text[]
-            OR categories::text[] @> ARRAY['sales_rep']::text[]
-            OR categories::text[] @> ARRAY['salesrep']::text[]
-            OR categories::text[] @> ARRAY['SalesRep']::text[]
+            categories::varchar[] @> ARRAY['Sales Reps']::varchar[]
+            OR categories::varchar[] @> ARRAY['sales_reps']::varchar[]
+            OR categories::varchar[] @> ARRAY['sales-reps']::varchar[]
+            OR categories::varchar[] @> ARRAY['Sales Rep']::varchar[]
+            OR categories::varchar[] @> ARRAY['sales_rep']::varchar[]
+            OR categories::varchar[] @> ARRAY['salesrep']::varchar[]
+            OR categories::varchar[] @> ARRAY['SalesRep']::varchar[]
           )
         ORDER BY created_at DESC 
         LIMIT 1
@@ -1052,11 +1052,11 @@ class WebhookService {
             tenant_id = $1
             AND processing_status = 'completed'
             AND (
-              categories::text[] @> ARRAY['Sales Reps']::text[]
-              OR categories::text[] @> ARRAY['sales_reps']::text[]
-              OR categories::text[] @> ARRAY['sales-reps']::text[]
-              OR categories::text[] @> ARRAY['Sales Rep']::text[]
-              OR categories::text[] @> ARRAY['sales_rep']::text[]
+              categories::varchar[] @> ARRAY['Sales Reps']::varchar[]
+              OR categories::varchar[] @> ARRAY['sales_reps']::varchar[]
+              OR categories::varchar[] @> ARRAY['sales-reps']::varchar[]
+              OR categories::varchar[] @> ARRAY['Sales Rep']::varchar[]
+              OR categories::varchar[] @> ARRAY['sales_rep']::varchar[]
             )
           ORDER BY created_at DESC 
           LIMIT 10
@@ -1907,9 +1907,9 @@ class WebhookService {
           console.log('🔧 Converting categories column to text[] type...');
           
           await sequelize.query(`
-            ALTER TABLE content_assets 
-            ALTER COLUMN categories TYPE text[] 
-            USING categories::text[];
+            ALTER TABLE content_assets
+            ALTER COLUMN categories TYPE text[]
+            USING categories::varchar[];
           `);
           
           console.log('✅ Categories column converted to text[] successfully');
@@ -1929,7 +1929,7 @@ class WebhookService {
       // Provide helpful SQL commands for manual execution
       if (error.message.includes('permission denied') || error.message.includes('must be owner')) {
         console.log('💡 Run this SQL manually as database owner:');
-        console.log('   ALTER TABLE content_assets ALTER COLUMN categories TYPE text[] USING categories::text[];');
+        console.log('   ALTER TABLE content_assets ALTER COLUMN categories TYPE text[] USING categories::varchar[];');
       }
       
       return false;
