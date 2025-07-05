@@ -610,6 +610,21 @@ getImageExtension(contentType, url) {
         });
       }
 
+      // Additional fallback: if projectId looks like a name instead of UUID
+      if (!project) {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(String(projectId))) {
+          const nameQuery = {
+            where: { name: projectId },
+            include: query.include
+          };
+          if (tenantId) {
+            nameQuery.where.tenantId = tenantId;
+          }
+          project = await this.models.ContentProject.findOne(nameQuery);
+        }
+      }
+
       if (!project) {
         throw new Error('Project not found');
       }
