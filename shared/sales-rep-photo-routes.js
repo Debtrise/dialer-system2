@@ -574,38 +574,42 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
       const offset = (parseInt(page) - 1) * parseInt(limit);
 
       const Op = sequelize.Sequelize.Op;
-      const baseWhere = {
-        tenantId: req.user.tenantId,
-        [Op.and]: [
-          sequelize.where(
-            sequelize.cast(sequelize.col('categories'), 'text[]'),
-            { [Op.overlap]: ['Sales Reps', 'sales_reps'] }
-          )
-        ]
-      };
+      const conditions = [
+        sequelize.where(
+          sequelize.cast(sequelize.col('categories'), 'text[]'),
+          { [Op.overlap]: ['Sales Reps', 'sales_reps'] }
+        )
+      ];
 
       if (search) {
         const like = `%${search.toString().toLowerCase()}%`;
-        baseWhere[Op.and] = [
-          {
-            [Op.or]: [
-              { name: { [Op.iLike]: like } },
-              sequelize.where(sequelize.fn('LOWER', sequelize.json('metadata.repEmail')), {
-                [Op.like]: like
-              }),
-              sequelize.where(sequelize.fn('LOWER', sequelize.json('metadata.rep_email')), {
-                [Op.like]: like
-              }),
-              sequelize.where(sequelize.fn('LOWER', sequelize.json('metadata.email')), {
-                [Op.like]: like
-              }),
-              sequelize.where(sequelize.fn('LOWER', sequelize.json('metadata.repName')), {
-                [Op.like]: like
-              })
-            ]
-          }
-        ];
+        conditions.push({
+          [Op.or]: [
+            { name: { [Op.iLike]: like } },
+            sequelize.where(
+              sequelize.fn('LOWER', sequelize.json('metadata.repEmail')),
+              { [Op.like]: like }
+            ),
+            sequelize.where(
+              sequelize.fn('LOWER', sequelize.json('metadata.rep_email')),
+              { [Op.like]: like }
+            ),
+            sequelize.where(
+              sequelize.fn('LOWER', sequelize.json('metadata.email')),
+              { [Op.like]: like }
+            ),
+            sequelize.where(
+              sequelize.fn('LOWER', sequelize.json('metadata.repName')),
+              { [Op.like]: like }
+            )
+          ]
+        });
       }
+
+      const baseWhere = {
+        tenantId: req.user.tenantId,
+        [Op.and]: conditions
+      };
 
       const { rows: assets, count: total } = await ContentAsset.findAndCountAll({
         where: baseWhere,
