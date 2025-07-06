@@ -418,6 +418,12 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
         metadata
       );
 
+      const repPhotoDir = contentService.directories.salesRepPhotos;
+      await fs.mkdir(repPhotoDir, { recursive: true });
+      const origName = path.basename(asset.filePath);
+      const origDest = path.join(repPhotoDir, origName);
+      await fs.copyFile(asset.filePath, origDest);
+
       // Copy thumbnails to sales rep specific directories
       try {
         const thumbName = path.basename(asset.thumbnailUrl || '');
@@ -442,9 +448,10 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
           newPreviews[size] = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-previews/${name}`;
         }
 
-        await asset.update({ 
-          thumbnailUrl: asset.thumbnailUrl, 
-          previewUrls: newPreviews 
+
+        await asset.update({
+          thumbnailUrl: asset.thumbnailUrl,
+          previewUrls: newPreviews
         });
 
         console.log('✅ Asset uploaded with thumbnails:', {
@@ -548,6 +555,12 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
               await fs.copyFile(src, dest);
               newPreviews[size] = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-previews/${namePart}`;
             }
+
+            const repPhotoDir = contentService.directories.salesRepPhotos;
+            await fs.mkdir(repPhotoDir, { recursive: true });
+            const origName = path.basename(asset.filePath);
+            const origDest = path.join(repPhotoDir, origName);
+            await fs.copyFile(asset.filePath, origDest);
 
             await asset.update({ thumbnailUrl: asset.thumbnailUrl, previewUrls: newPreviews });
           } catch (thumbErr) {
@@ -759,6 +772,12 @@ router.get('/sales-rep-photos', authenticateToken, async (req, res) => {
         req.file,
         metadata
       );
+
+      const repPhotoDir = contentService.directories.salesRepPhotos;
+      await fs.mkdir(repPhotoDir, { recursive: true });
+      const origName = path.basename(asset.filePath);
+      const origDest = path.join(repPhotoDir, origName);
+      await fs.copyFile(asset.filePath, origDest);
 
       res.json({
         message: 'Fallback photo set successfully',

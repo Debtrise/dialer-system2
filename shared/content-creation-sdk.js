@@ -90,7 +90,7 @@ class ContentCreationSDK {
         name: projectData.name,
         description: projectData.description || '',
         templateId: projectData.templateId,
-        canvasSettings: projectData.canvasSettings || {
+        canvasSize: projectData.canvasSize || {
           width: 1920,
           height: 1080,
           backgroundColor: '#ffffff',
@@ -176,7 +176,7 @@ class ContentCreationSDK {
       }
 
       // Increment version on significant changes
-      if (updateData.canvasSettings || updateData.elements) {
+      if (updateData.canvasSize || updateData.elements) {
         updateData.version = (project.version || 1) + 1;
       }
 
@@ -540,7 +540,7 @@ class ContentCreationSDK {
         name: templateData.name,
         description: templateData.description || '',
         category: templateData.category || 'custom',
-        canvasSettings: templateData.canvasSettings || {},
+        canvasSize: templateData.canvasSize || {},
         elements: templateData.elements || [],
         variables: templateData.variables || {},
         metadata: templateData.metadata || {},
@@ -705,7 +705,7 @@ class ContentCreationSDK {
         project: {
           id: project.id,
           name: project.name,
-          canvasSettings: project.canvasSettings
+          canvasSize: project.canvasSize
         },
         elements: project.elements.map(element => ({
           id: element.id,
