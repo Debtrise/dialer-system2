@@ -35,6 +35,7 @@ module.exports = function(sequelize, DataTypes) {
         'media_showcase',
         'social_display',
         'analytics_dashboard',
+        'quick',
         'custom'
       ),
       defaultValue: 'custom'

@@ -741,6 +741,16 @@ async getTemplate(templateId, tenantId) {
         throw new Error('Project not found');
       }
 
+      // Support legacy snake_case or type field
+      const resolvedType =
+        elementData.elementType ||
+        elementData.element_type ||
+        elementData.type;
+      if (!resolvedType) {
+        throw new Error('elementType is required');
+      }
+      elementData.elementType = resolvedType;
+
       // NEW: Download external images immediately when creating image elements
       if ((elementData.elementType === 'image' || elementData.elementType === 'standard_photo' || elementData.elementType === 'sales_rep_photo') && elementData.properties) {
         const imageUrl = elementData.properties.imageUrl || 
@@ -819,6 +829,14 @@ async getTemplate(templateId, tenantId) {
 
       if (!element) {
         throw new Error('Element not found');
+      }
+
+      // Resolve element type in update payload for compatibility
+      if (updateData.element_type && !updateData.elementType) {
+        updateData.elementType = updateData.element_type;
+      }
+      if (updateData.type && !updateData.elementType) {
+        updateData.elementType = updateData.type;
       }
 
       // NEW: Download external images when updating image elements
