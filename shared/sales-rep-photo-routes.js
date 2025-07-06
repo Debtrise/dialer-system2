@@ -576,13 +576,11 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
       const Op = sequelize.Sequelize.Op;
       const baseWhere = {
         tenantId: req.user.tenantId,
-        [Op.or]: [
+        [Op.and]: [
           sequelize.where(
-            sequelize.fn('LOWER', sequelize.cast(sequelize.col('categories'), 'text')),
-            { [Op.like]: '%sales rep%' }
-          ),
-          { categories: { [Op.contains]: ['Sales Reps'] } },
-          { categories: { [Op.contains]: ['sales_reps'] } }
+            sequelize.cast(sequelize.col('categories'), 'text[]'),
+            { [Op.overlap]: ['Sales Reps', 'sales_reps'] }
+          )
         ]
       };
 
@@ -650,19 +648,20 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
       const email = req.params.email.toLowerCase();
       console.log('🔍 Looking for photo for email:', email);
       
-      // FIXED: Use simplified query to avoid bind/replacements conflict
+      // Use overlap check so queries work across DB setups
       const asset = await ContentAsset.findOne({
         where: {
           tenantId: req.user.tenantId,
           [sequelize.Sequelize.Op.or]: [
-            sequelize.literal(`metadata->>'repEmail' = '${email}'`),
-            sequelize.literal(`metadata->>'rep_email' = '${email}'`),
-            sequelize.literal(`metadata->>'email' = '${email}'`)
+            sequelize.where(sequelize.fn('LOWER', sequelize.json('metadata.repEmail')), email),
+            sequelize.where(sequelize.fn('LOWER', sequelize.json('metadata.rep_email')), email),
+            sequelize.where(sequelize.fn('LOWER', sequelize.json('metadata.email')), email)
           ],
-          [sequelize.Sequelize.Op.or]: [
-            sequelize.literal(`categories::text LIKE '%Sales Rep%'`),
-            sequelize.literal(`categories::text LIKE '%sales_rep%'`),
-            sequelize.literal(`categories::text LIKE '%sales-rep%'`)
+          [sequelize.Sequelize.Op.and]: [
+            sequelize.where(
+              sequelize.cast(sequelize.col('categories'), 'text[]'),
+              { [sequelize.Sequelize.Op.overlap]: ['Sales Reps', 'sales_reps'] }
+            )
           ]
         }
       });
