@@ -568,81 +568,83 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
   });
 
   // Get all sales rep photos - simplified query
-  router.get('/sales-rep-photos', authenticateToken, async (req, res) => {
-    try {
-      const { page = 1, limit = 20, search = '' } = req.query;
-      const offset = (parseInt(page) - 1) * parseInt(limit);
-
-      const Op = sequelize.Sequelize.Op;
-      const baseWhere = {
-        tenantId: req.user.tenantId,
+ // Get all sales rep photos - simplified query
+router.get('/sales-rep-photos', authenticateToken, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, search = '' } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const Op = sequelize.Sequelize.Op;
+    
+    const conditions = [
+      sequelize.where(
+        sequelize.cast(sequelize.col('categories'), 'text[]'),
+        { [Op.overlap]: ['Sales Reps', 'sales_reps'] }
+      )
+    ];
+    
+    if (search) {
+      const like = `%${search.toString().toLowerCase()}%`;
+      conditions.push({
         [Op.or]: [
+          { name: { [Op.iLike]: like } },
           sequelize.where(
-            sequelize.fn('LOWER', sequelize.cast(sequelize.col('categories'), 'text')),
-            { [Op.like]: '%sales rep%' }
+            sequelize.fn('LOWER', sequelize.json('metadata.repEmail')),
+            { [Op.like]: like }
           ),
-          { categories: { [Op.contains]: ['Sales Reps'] } },
-          { categories: { [Op.contains]: ['sales_reps'] } }
+          sequelize.where(
+            sequelize.fn('LOWER', sequelize.json('metadata.rep_email')),
+            { [Op.like]: like }
+          ),
+          sequelize.where(
+            sequelize.fn('LOWER', sequelize.json('metadata.email')),
+            { [Op.like]: like }
+          ),
+          sequelize.where(
+            sequelize.fn('LOWER', sequelize.json('metadata.repName')),
+            { [Op.like]: like }
+          )
         ]
-      };
-
-      if (search) {
-        const like = `%${search.toString().toLowerCase()}%`;
-        baseWhere[Op.and] = [
-          {
-            [Op.or]: [
-              { name: { [Op.iLike]: like } },
-              sequelize.where(sequelize.fn('LOWER', sequelize.json('metadata.repEmail')), {
-                [Op.like]: like
-              }),
-              sequelize.where(sequelize.fn('LOWER', sequelize.json('metadata.rep_email')), {
-                [Op.like]: like
-              }),
-              sequelize.where(sequelize.fn('LOWER', sequelize.json('metadata.email')), {
-                [Op.like]: like
-              }),
-              sequelize.where(sequelize.fn('LOWER', sequelize.json('metadata.repName')), {
-                [Op.like]: like
-              })
-            ]
-          }
-        ];
-      }
-
-      const { rows: assets, count: total } = await ContentAsset.findAndCountAll({
-        where: baseWhere,
-        order: [['createdAt', 'DESC']],
-        limit: parseInt(limit),
-        offset
       });
-
-      const processedAssets = assets.map(asset => ({
-        id: asset.id,
-        name: asset.name,
-        url: asset.publicUrl,
-        thumbnailUrl: asset.thumbnailUrl,
-        repEmail: asset.metadata?.repEmail,
-        repName: asset.metadata?.repName,
-        uploadedAt: asset.createdAt,
-        fileSize: asset.fileSize
-      }));
-
-      res.json({
-        assets: processedAssets,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages: Math.ceil(total / parseInt(limit)),
-          totalCount: total,
-          hasNextPage: parseInt(page) * parseInt(limit) < total,
-          hasPrevPage: parseInt(page) > 1
-        }
-      });
-
-    } catch (error) {
-      console.error('Error getting sales rep photos:', error);
-      res.status(400).json({ error: error.message });
     }
-  });
+    
+    const baseWhere = {
+      tenantId: req.user.tenantId,
+      [Op.and]: conditions
+    };
+
+    const { rows: assets, count: total } = await ContentAsset.findAndCountAll({
+      where: baseWhere,
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit),
+      offset
+    });
+    
+    const processedAssets = assets.map(asset => ({
+      id: asset.id,
+      name: asset.name,
+      url: asset.publicUrl,
+      thumbnailUrl: asset.thumbnailUrl,
+      repEmail: asset.metadata?.repEmail,
+      repName: asset.metadata?.repName,
+      uploadedAt: asset.createdAt,
+      fileSize: asset.fileSize
+    }));
+    
+    res.json({
+      assets: processedAssets,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(total / parseInt(limit)),
+        totalCount: total,
+        hasNextPage: parseInt(page) * parseInt(limit) < total,
+        hasPrevPage: parseInt(page) > 1
+      }
+    });
+  } catch (error) {
+    console.error('Error getting sales rep photos:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
 
   // Get sales rep photo by email - ENHANCED with compatibility
   router.get('/sales-rep-photos/by-email/:email', authenticateToken, async (req, res) => {
@@ -650,19 +652,20 @@ module.exports = function(app, sequelize, authenticateToken, contentService) {
       const email = req.params.email.toLowerCase();
       console.log('🔍 Looking for photo for email:', email);
       
-      // FIXED: Use simplified query to avoid bind/replacements conflict
+      // Use overlap check so queries work across DB setups
       const asset = await ContentAsset.findOne({
         where: {
           tenantId: req.user.tenantId,
           [sequelize.Sequelize.Op.or]: [
-            sequelize.literal(`metadata->>'repEmail' = '${email}'`),
-            sequelize.literal(`metadata->>'rep_email' = '${email}'`),
-            sequelize.literal(`metadata->>'email' = '${email}'`)
+            sequelize.where(sequelize.fn('LOWER', sequelize.json('metadata.repEmail')), email),
+            sequelize.where(sequelize.fn('LOWER', sequelize.json('metadata.rep_email')), email),
+            sequelize.where(sequelize.fn('LOWER', sequelize.json('metadata.email')), email)
           ],
-          [sequelize.Sequelize.Op.or]: [
-            sequelize.literal(`categories::text LIKE '%Sales Rep%'`),
-            sequelize.literal(`categories::text LIKE '%sales_rep%'`),
-            sequelize.literal(`categories::text LIKE '%sales-rep%'`)
+          [sequelize.Sequelize.Op.and]: [
+            sequelize.where(
+              sequelize.cast(sequelize.col('categories'), 'text[]'),
+              { [sequelize.Sequelize.Op.overlap]: ['Sales Reps', 'sales_reps'] }
+            )
           ]
         }
       });
