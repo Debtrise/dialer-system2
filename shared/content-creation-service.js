@@ -43,7 +43,9 @@ class ContentCreationService {
       downloaded: path.join(this.uploadPath, 'downloaded'), // for downloaded external images
       videos: path.join(this.uploadPath, 'videos'), // generated announcement videos
       salesRepThumbnails: path.join(this.uploadPath, 'sales-rep-thumbnails'),
-      salesRepPreviews: path.join(this.uploadPath, 'sales-rep-previews')
+      salesRepPreviews: path.join(this.uploadPath, 'sales-rep-previews'),
+      // Directory to keep the original uploaded photos for reps
+      salesRepPhotos: path.join(this.uploadPath, 'sales-rep-photos')
     };
 
     // Ensure all directories exist on initialization

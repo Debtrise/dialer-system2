@@ -2,6 +2,21 @@
 
 This document describes the HTTP endpoints exposed by the Content Creation service. All authenticated routes require a valid JWT via the `Authorization: Bearer <token>` header.
 
+### Common Object Format
+Both templates and projects use a unified JSON shape. Key fields include:
+
+```json
+{
+  "id": "uuid",
+  "tenantId": "string",
+  "name": "string",
+  "description": "string",
+  "canvasSize": {"width": 1920, "height": 1080},
+  "projectData": {},
+  "variables": {}
+}
+```
+
 ## Public OptiSync Endpoints
 These endpoints are primarily used by OptiSigns to pull content from the system.
 

@@ -25,6 +25,23 @@ These endpoints integrate with the OptiSigns digital signage platform. All route
 | `GET` | `/optisigns/takeovers` | List active takeovers. |
 | `POST` | `/optisigns/displays/:id/push` | Push content to a display. |
 
+### Display JSON Format
+All services expose displays using the same camelCase schema:
+
+```json
+{
+  "id": "uuid",
+  "tenantId": "string",
+  "optisignsDisplayId": "string",
+  "name": "string",
+  "uuid": "string",
+  "location": "string",
+  "status": "string",
+  "isActive": true,
+  "isOnline": true
+}
+```
+
 ## Assets
 | Method | Path | Description |
 | ------ | ---- | ----------- |
