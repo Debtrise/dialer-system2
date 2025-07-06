@@ -7,6 +7,8 @@ Only one photo is stored per sales representative. Uploading a new photo for the
 When using the Content Creator, you can place a photo on the canvas by adding an element with `elementType: "sales_rep_photo"`. The element automatically binds to the `{rep_photo}` variable so that the correct representative's image is displayed when a deal is closed.
 You can upload photos one at a time using `/sales-rep-photos/upload` or upload many using a CSV at `/sales-rep-photos/bulk-csv`.
 
+Uploaded files are stored in `uploads/content/sales-rep-photos` with other content assets. Thumbnails are copied to `uploads/content/sales-rep-thumbnails` and previews to `uploads/content/sales-rep-previews` for consistency across services.
+
 | Method | Path | Description |
 | ------ | ---- | ----------- |
 | `POST` | `/sales-rep-photos/upload` | Upload a photo for a single sales rep. Form fields: `photo`, `repEmail`, optional `repName`. |
