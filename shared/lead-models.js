@@ -219,8 +219,7 @@ module.exports = function(sequelize) {
     callDirection: {
       type: DataTypes.ENUM('inbound', 'outbound'),
       allowNull: false,
-      defaultValue: 'outbound',
-      comment: 'Direction of the call'
+      defaultValue: 'outbound'
     },
     status: {
       type: DataTypes.ENUM('initiated', 'ringing', 'answered', 'completed', 'failed', 'busy', 'no_answer', 'transferred'),
