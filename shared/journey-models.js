@@ -1,5 +1,5 @@
-// journey-models.js
-// This file should be created in the shared directory to properly initialize journey models
+/// journey-models.js
+// FIXED: Proper model initialization and relationships
 
 const { DataTypes } = require('sequelize');
 
@@ -33,7 +33,8 @@ module.exports = (sequelize) => {
     },
     tenantId: {
       type: DataTypes.STRING,
-      allowNull: false
+      allowNull: false,
+      index: true
     },
     isActive: {
       type: DataTypes.BOOLEAN,
@@ -173,7 +174,8 @@ module.exports = (sequelize) => {
     },
     tenantId: {
       type: DataTypes.STRING,
-      allowNull: false
+      allowNull: false,
+      index: true
     },
     status: {
       type: DataTypes.ENUM('active', 'paused', 'completed', 'failed', 'exited'),
@@ -288,70 +290,101 @@ module.exports = (sequelize) => {
     ]
   });
 
-  // Define relationships
-  Journey.hasMany(JourneyStep, { 
-    foreignKey: 'journeyId',
-    as: 'steps',
-    onDelete: 'CASCADE'
-  });
-
-  JourneyStep.belongsTo(Journey, { 
-    foreignKey: 'journeyId',
-    as: 'journey'
-  });
-
-  Journey.hasMany(LeadJourney, { 
-    foreignKey: 'journeyId',
-    as: 'leadJourneys',
-    onDelete: 'CASCADE'
-  });
-
-  LeadJourney.belongsTo(Journey, { 
-    foreignKey: 'journeyId',
-    as: 'journey'
-  });
-
-  LeadJourney.belongsTo(JourneyStep, { 
-    as: 'currentStep', 
-    foreignKey: 'currentStepId'
-  });
-
-  LeadJourney.hasMany(JourneyExecution, { 
-    foreignKey: 'leadJourneyId',
-    as: 'executions',
-    onDelete: 'CASCADE'
-  });
-
-  // IMPORTANT: These are the associations that were missing or incorrect
-  JourneyExecution.belongsTo(LeadJourney, { 
-    foreignKey: 'leadJourneyId',
-    as: 'leadJourney' // Note: lowercase 'leadJourney' not 'LeadJourney'
-  });
-
-  JourneyExecution.belongsTo(JourneyStep, { 
-    foreignKey: 'stepId',
-    as: 'step' // Note: lowercase 'step'
-  });
-
-  JourneyStep.hasMany(JourneyExecution, { 
-    foreignKey: 'stepId',
-    as: 'executions'
-  });
-
-  // Set up Lead associations if Lead model exists
-  if (sequelize.models.Lead) {
-    const Lead = sequelize.models.Lead;
-    
-    LeadJourney.belongsTo(Lead, {
-      foreignKey: 'leadId',
-      as: 'lead'
+  // FIXED: Define relationships in correct order with proper error handling
+  try {
+    // Journey -> JourneyStep relationship
+    Journey.hasMany(JourneyStep, { 
+      foreignKey: 'journeyId',
+      as: 'steps',
+      onDelete: 'CASCADE'
     });
-    
-    Lead.hasMany(LeadJourney, {
-      foreignKey: 'leadId',
-      as: 'leadJourneys'
+
+    JourneyStep.belongsTo(Journey, { 
+      foreignKey: 'journeyId',
+      as: 'journey'
     });
+
+    // Journey -> LeadJourney relationship
+    Journey.hasMany(LeadJourney, { 
+      foreignKey: 'journeyId',
+      as: 'leadJourneys',
+      onDelete: 'CASCADE'
+    });
+
+    LeadJourney.belongsTo(Journey, { 
+      foreignKey: 'journeyId',
+      as: 'journey'
+    });
+
+    // LeadJourney -> JourneyStep relationship (current step)
+    LeadJourney.belongsTo(JourneyStep, { 
+      as: 'currentStep', 
+      foreignKey: 'currentStepId'
+    });
+
+    // LeadJourney -> JourneyExecution relationship
+    LeadJourney.hasMany(JourneyExecution, { 
+      foreignKey: 'leadJourneyId',
+      as: 'executions',
+      onDelete: 'CASCADE'
+    });
+
+    // FIXED: Correct relationship definitions
+    JourneyExecution.belongsTo(LeadJourney, { 
+      foreignKey: 'leadJourneyId',
+      as: 'leadJourney'
+    });
+
+    JourneyExecution.belongsTo(JourneyStep, { 
+      foreignKey: 'stepId',
+      as: 'step'
+    });
+
+    JourneyStep.hasMany(JourneyExecution, { 
+      foreignKey: 'stepId',
+      as: 'executions'
+    });
+
+    console.log('✅ Journey model relationships defined successfully');
+
+  } catch (relationshipError) {
+    console.error('❌ Error defining journey model relationships:', relationshipError);
   }
+
+  // FIXED: Set up Lead associations with proper deferred loading
+  const setupLeadRelationships = () => {
+    try {
+      if (sequelize.models.Lead) {
+        const Lead = sequelize.models.Lead;
+        
+        // Check if associations already exist
+        if (!Lead.associations.leadJourneys) {
+          LeadJourney.belongsTo(Lead, {
+            foreignKey: 'leadId',
+            as: 'lead'
+          });
+          
+          Lead.hasMany(LeadJourney, {
+            foreignKey: 'leadId',
+            as: 'leadJourneys'
+          });
+          
+          console.log('✅ Lead-Journey relationships established');
+        } else {
+          console.log('ℹ️ Lead-Journey relationships already exist');
+        }
+      } else {
+        console.log('⚠️ Lead model not found, will retry after models are loaded');
+        // Retry after a short delay
+        setTimeout(setupLeadRelationships, 1000);
+      }
+    } catch (leadRelationshipError) {
+      console.error('❌ Error setting up Lead relationships:', leadRelationshipError);
+    }
+  };
+
+  // Setup relationships now or later
+  setupLeadRelationships();
 
   return {
     Journey,
