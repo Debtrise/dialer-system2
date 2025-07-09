@@ -248,7 +248,7 @@ async processProjectImagesForExport(project) {
 /**
  * Process all video elements and embed small videos as base64
  */
-async processProjectVideosForExport(project, maxSizeMB = 5) {
+async processProjectVideosForExport(project, maxSizeMB = 10 ) {
   try {
     const elements = project.elements || [];
     for (const element of elements) {
@@ -1057,204 +1057,404 @@ async createOptiSignsApiGatewayConfig(projectId, tenantId, options = {}) {
   }
 }
 
-  // ===== ASSET MANAGEMENT =====
+  // shared/content-creation-service.js - Add missing methods
 
- // Replace the uploadAsset method in ContentCreationService (around line 901)
-  async uploadAsset(tenantId, userId, file, metadata = {}) {
-    try {
-      console.log('📤 Uploading asset:', {
-        originalname: file.originalname,
-        mimetype: file.mimetype,
-        size: file.size,
-        hasBuffer: !!file.buffer,
-        hasPath: !!file.path
-      });
+/**
+ * Determine asset type from MIME type
+ */
+getAssetType(mimeType) {
+  if (!mimeType) return 'unknown';
+  
+  const type = mimeType.toLowerCase();
+  
+  if (type.startsWith('image/')) {
+    return 'image';
+  } else if (type.startsWith('video/')) {
+    return 'video';
+  } else if (type.startsWith('audio/')) {
+    return 'audio';
+  } else if (type.includes('pdf')) {
+    return 'document';
+  } else if (type.includes('font') || type.includes('ttf') || type.includes('otf') || type.includes('woff')) {
+    return 'font';
+  } else {
+    return 'document';
+  }
+}
 
-      const fileName = `${Date.now()}-${file.originalname}`;
-      const filePath = path.join(this.directories.assets, fileName);
+/**
+ * Enhanced uploadAsset method with proper error handling
+ */
+async uploadAsset(tenantId, userId, file, metadata = {}) {
+  try {
+    console.log(`📤 Uploading asset for tenant ${tenantId}:`, {
+      filename: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Validate file
+    if (!file.buffer || file.buffer.length === 0) {
+      throw new Error('No file data provided');
+    }
+
+    if (file.size > 50 * 1024 * 1024) { // 50MB limit
+      throw new Error('File too large. Maximum size is 50MB.');
+    }
+
+    // Determine asset type
+    const assetType = this.getAssetType(file.mimetype);
+    
+    // Generate safe filename
+    const timestamp = Date.now();
+    const safeOriginalName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    
+    let processedFile;
+    
+    // Process based on asset type
+    if (assetType === 'image') {
+      try {
+        processedFile = await this.processImage(file.buffer, safeOriginalName, {
+          maxWidth: 1920,
+          maxHeight: 1080,
+          quality: 85,
+          generateThumbnails: true,
+          generatePreviews: true
+        });
+      } catch (imageError) {
+        console.error('Image processing failed, saving as-is:', imageError.message);
+        
+        // Fallback: save original file without processing
+        const fallbackFilename = `fallback_${timestamp}_${safeOriginalName}`;
+        const fallbackPath = path.join(this.directories.assets, fallbackFilename);
+        
+        await fs.mkdir(this.directories.assets, { recursive: true });
+        await fs.writeFile(fallbackPath, file.buffer);
+        
+        processedFile = {
+          filePath: fallbackPath,
+          filename: fallbackFilename,
+          thumbnailUrl: null,
+          previewUrls: {},
+          publicUrl: `${process.env.BASE_URL || 'http://localhost:3001'}/uploads/content/assets/${fallbackFilename}`,
+          fileSize: file.size,
+          dimensions: null,
+          processed: false
+        };
+      }
+    } else {
+      // Handle non-image files (videos, documents, etc.)
+      const filename = `${timestamp}_${safeOriginalName}`;
+      const filePath = path.join(this.directories.assets, filename);
       
-      // Generate absolute public URL for remote frontend access
-      const baseUrl = process.env.BASE_URL || 'http://34.122.156.88:3001';
-      const publicUrl = `${baseUrl}/uploads/content/assets/${fileName}`;
-
-      console.log('🌐 Generated public URL:', publicUrl);
-
-      // Handle both buffer (memoryStorage) and path (diskStorage) cases
-      let fileBuffer;
-      if (file.buffer) {
-        // Memory storage - file is already in buffer
-        fileBuffer = file.buffer;
-        console.log('✅ Using file buffer from memory storage');
-      } else if (file.path) {
-        // Disk storage - read file from path
-        console.log('📁 Reading file from disk storage path:', file.path);
-        fileBuffer = await fs.readFile(file.path);
-      } else {
-        throw new Error('File has neither buffer nor path - invalid file object');
-      }
-
-      console.log('💾 Writing file to:', filePath);
-      // Save original file
-      await fs.writeFile(filePath, fileBuffer);
-
-      // Determine asset type inline instead of using this.getAssetType
-      let assetType;
-      if (file.mimetype.startsWith('image/')) {
-        assetType = 'image';
-      } else if (file.mimetype.startsWith('video/')) {
-        assetType = 'video';
-      } else if (file.mimetype.startsWith('audio/')) {
-        assetType = 'audio';
-      } else if (file.mimetype === 'application/pdf') {
-        assetType = 'document';
-      } else if (file.mimetype.startsWith('font/') || file.mimetype.includes('font')) {
-        assetType = 'font';
-      } else {
-        assetType = 'other';
-      }
-
-      console.log('📋 Detected asset type:', assetType);
-
-      let dimensions = {};
-      let thumbnailUrl = null;
-      let previewUrls = {};
-      let duration = null;
-      let bitrate = null;
-      let fps = null;
-
-      // Process based on asset type - THIS IS KEY FOR THUMBNAILS
-      switch (assetType) {
-        case 'image':
-          console.log('🖼️ Processing image for thumbnails and previews...');
-          const imageResult = await this.processImage(file, fileName, baseUrl);
-          dimensions = imageResult.dimensions;
-          thumbnailUrl = imageResult.thumbnailUrl;
-          previewUrls = imageResult.previewUrls;
-          console.log('✅ Image processing complete:', {
-            dimensions,
-            thumbnailUrl,
-            previewCount: Object.keys(previewUrls).length
-          });
-          break;
-
-        case 'video':
-          console.log('🎥 Processing video...');
-          const videoResult = await this.processVideo(file, fileName, baseUrl);
-          dimensions = videoResult.dimensions;
-          duration = videoResult.duration;
-          bitrate = videoResult.bitrate;
-          fps = videoResult.fps;
-          thumbnailUrl = videoResult.thumbnailUrl;
-          previewUrls = videoResult.previewUrls;
-          break;
-
-        case 'audio':
-          console.log('🎵 Processing audio...');
-          const audioResult = await this.processAudio(file, fileName, baseUrl);
-          duration = audioResult.duration;
-          bitrate = audioResult.bitrate;
-          thumbnailUrl = audioResult.waveformUrl;
-          break;
-      }
-
-      const asset = await this.models.ContentAsset.create({
-        tenantId,
-        name: metadata.name || file.originalname,
-        originalName: file.originalname,
-        assetType,
-        mimeType: file.mimetype,
-        fileSize: file.size,
+      await fs.mkdir(this.directories.assets, { recursive: true });
+      await fs.writeFile(filePath, file.buffer);
+      
+      processedFile = {
         filePath,
-        publicUrl,
-        thumbnailUrl,
-        previewUrls,
-        dimensions,
-        duration,
-        bitrate,
-        fps,
-        metadata: metadata.metadata || {},
-        tags: metadata.tags || [],
-        categories: metadata.categories || [],
-        uploadedBy: userId,
-        processingStatus: 'completed'
-      });
-
-      console.log(`✅ Asset "${asset.name}" uploaded successfully for tenant ${tenantId}`);
-      console.log(`📊 Asset details:`, {
-        id: asset.id,
-        publicUrl: asset.publicUrl,
-        thumbnailUrl: asset.thumbnailUrl,
-        previewUrls: asset.previewUrls,
-        dimensions: asset.dimensions
-      });
-      
-      return asset;
-    } catch (error) {
-      console.error('❌ Error uploading asset:', error);
-      throw new Error(`Failed to upload asset: ${error.message}`);
-    }
-  }
-
-  // Also need to fix the processImage method to generate absolute URLs
-  async processImage(file, fileName, baseUrl) {
-    try {
-      // Get the image buffer - handle both cases
-      let imageBuffer;
-      if (file.buffer) {
-        imageBuffer = file.buffer;
-      } else if (file.path) {
-        imageBuffer = await fs.readFile(file.path);
-      } else {
-        throw new Error('No image buffer or path available');
-      }
-
-      const image = sharp(imageBuffer);
-      const metadata = await image.metadata();
-      
-      const dimensions = {
-        width: metadata.width,
-        height: metadata.height
+        filename,
+        thumbnailUrl: null,
+        previewUrls: {},
+        publicUrl: `${process.env.BASE_URL || 'http://localhost:3001'}/uploads/content/assets/${filename}`,
+        fileSize: file.size,
+        dimensions: null,
+        processed: true
       };
+    }
 
-      // Generate thumbnail with absolute URL
-      const thumbnailName = `thumb_${fileName}`;
-      const thumbnailPath = path.join(this.directories.thumbnails, thumbnailName);
-      const thumbnailUrl = `${baseUrl}/uploads/content/thumbnails/${thumbnailName}`;
+    // Create database record
+    const asset = await this.models.ContentAsset.create({
+      tenantId,
+      name: metadata.name || file.originalname,
+      filename: processedFile.filename,
+      filePath: processedFile.filePath,
+      fileSize: processedFile.fileSize,
+      mimeType: file.mimetype,
+      assetType,
+      publicUrl: processedFile.publicUrl,
+      thumbnailUrl: processedFile.thumbnailUrl,
+      previewUrls: processedFile.previewUrls,
+      dimensions: processedFile.dimensions,
+      uploadedBy: userId,
+      tags: metadata.tags || [],
+      categories: metadata.categories || [],
+      metadata: {
+        ...metadata.metadata,
+        originalName: file.originalname,
+        processed: processedFile.processed,
+        uploadTimestamp: new Date().toISOString()
+      },
+      processingStatus: processedFile.processed ? 'completed' : 'failed'
+    });
 
-      await image
-        .resize(320, 240, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 80 })
-        .toFile(thumbnailPath);
+    console.log(`✅ Asset uploaded successfully:`, {
+      id: asset.id,
+      filename: asset.filename,
+      size: asset.fileSize,
+      type: asset.assetType
+    });
 
-      console.log('✅ Thumbnail generated:', thumbnailUrl);
+    return asset;
 
-      // Generate multiple preview sizes with absolute URLs
-      const previewUrls = {};
-      const sizes = [
-        { name: 'small', width: 400, height: 300 },
-        { name: 'medium', width: 800, height: 600 },
-        { name: 'large', width: 1200, height: 900 }
-      ];
+  } catch (error) {
+    console.error('❌ Asset upload failed:', error);
+    throw new Error(`Failed to upload asset: ${error.message}`);
+  }
+}
 
-      for (const size of sizes) {
-        const previewName = `${size.name}_${fileName}`;
-        const previewPath = path.join(this.directories.previews, previewName);
-        previewUrls[size.name] = `${baseUrl}/uploads/content/previews/${previewName}`;
+/**
+ * Process uploaded image with enhanced error handling
+ */
+async processImage(buffer, filename, options = {}) {
+  try {
+    const { 
+      maxWidth = 1920, 
+      maxHeight = 1080, 
+      quality = 85,
+      generateThumbnails = true,
+      generatePreviews = true 
+    } = options;
 
-        await image
-          .resize(size.width, size.height, { fit: 'inside', withoutEnlargement: true })
-          .jpeg({ quality: 85 })
-          .toFile(previewPath);
+    console.log(`📸 Processing image: ${filename}`);
+    console.log(`📊 Original buffer size: ${buffer.length} bytes`);
 
-        console.log(`✅ ${size.name} preview generated:`, previewUrls[size.name]);
+    // Validate buffer
+    if (!buffer || buffer.length === 0) {
+      throw new Error('Invalid or empty image buffer');
+    }
+
+    // Check if Sharp is available
+    let sharp;
+    try {
+      sharp = require('sharp');
+    } catch (sharpError) {
+      console.error('Sharp not available:', sharpError.message);
+      throw new Error('Image processing library not available');
+    }
+
+    // Try to get image metadata first to validate the image
+    let imageInfo;
+    try {
+      imageInfo = await sharp(buffer).metadata();
+      console.log(`📋 Image metadata:`, {
+        format: imageInfo.format,
+        width: imageInfo.width,
+        height: imageInfo.height,
+        channels: imageInfo.channels,
+        hasAlpha: imageInfo.hasAlpha
+      });
+    } catch (metadataError) {
+      console.error('❌ Failed to read image metadata:', metadataError.message);
+      throw new Error(`Invalid image format or corrupted image: ${metadataError.message}`);
+    }
+
+    // Check for supported formats
+    const supportedFormats = ['jpeg', 'jpg', 'png', 'webp', 'tiff', 'gif'];
+    if (!supportedFormats.includes(imageInfo.format?.toLowerCase())) {
+      throw new Error(`Unsupported image format: ${imageInfo.format}. Supported formats: ${supportedFormats.join(', ')}`);
+    }
+
+    // Generate safe filename
+    const timestamp = Date.now();
+    const safeFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const baseName = path.parse(safeFilename).name;
+    const outputFilename = `${baseName}_${timestamp}.jpg`;
+    const outputPath = path.join(this.directories.assets, outputFilename);
+
+    // Ensure output directory exists
+    await fs.mkdir(this.directories.assets, { recursive: true });
+
+    let processedImage;
+    try {
+      // Create Sharp instance with error handling
+      processedImage = sharp(buffer, {
+        failOnError: false, // Don't fail on minor errors
+        unlimited: true     // Allow large images
+      });
+
+      // Handle different input formats and convert to JPEG for consistency
+      if (imageInfo.format === 'png' && imageInfo.hasAlpha) {
+        // PNG with transparency - add white background
+        processedImage = processedImage.flatten({ background: '#ffffff' });
       }
 
-      return { dimensions, thumbnailUrl, previewUrls };
+      // Resize if necessary while maintaining aspect ratio
+      const needsResize = imageInfo.width > maxWidth || imageInfo.height > maxHeight;
+      if (needsResize) {
+        console.log(`🔄 Resizing image from ${imageInfo.width}x${imageInfo.height} to max ${maxWidth}x${maxHeight}`);
+        processedImage = processedImage.resize(maxWidth, maxHeight, {
+          fit: 'inside',
+          withoutEnlargement: true
+        });
+      }
+
+      // Convert to JPEG with quality setting
+      processedImage = processedImage.jpeg({ 
+        quality,
+        progressive: true,
+        mozjpeg: true  // Use mozjpeg encoder for better compression
+      });
+
+      // Save the main processed image
+      await processedImage.toFile(outputPath);
+      console.log(`✅ Main image saved: ${outputPath}`);
+
+    } catch (sharpError) {
+      console.error('❌ Sharp processing failed:', sharpError.message);
+      
+      // Fallback: Try basic processing without advanced options
+      try {
+        console.log('🔄 Attempting fallback processing...');
+        processedImage = sharp(buffer)
+          .jpeg({ quality: 80 })
+          .resize(maxWidth, maxHeight, { fit: 'inside', withoutEnlargement: true });
+        
+        await processedImage.toFile(outputPath);
+        console.log(`✅ Fallback processing successful: ${outputPath}`);
+      } catch (fallbackError) {
+        console.error('❌ Fallback processing also failed:', fallbackError.message);
+        
+        // Last resort: Save original buffer as-is if it's a valid image
+        if (imageInfo.format) {
+          const originalPath = path.join(this.directories.assets, `original_${outputFilename}`);
+          await fs.writeFile(originalPath, buffer);
+          console.log(`⚠️ Saved original file without processing: ${originalPath}`);
+          return {
+            filePath: originalPath,
+            filename: `original_${outputFilename}`,
+            thumbnailUrl: null,
+            previewUrls: {},
+            publicUrl: `${process.env.BASE_URL || 'http://localhost:3001'}/uploads/content/assets/original_${outputFilename}`,
+            fileSize: buffer.length,
+            dimensions: { width: imageInfo.width, height: imageInfo.height },
+            processed: false
+          };
+        } else {
+          throw new Error(`Image processing failed completely: ${fallbackError.message}`);
+        }
+      }
+    }
+
+    // Get processed image info
+    const processedInfo = await sharp(outputPath).metadata();
+    const stats = await fs.stat(outputPath);
+
+    // Generate thumbnails if requested
+    let thumbnailUrl = null;
+    if (generateThumbnails) {
+      try {
+        thumbnailUrl = await this.generateThumbnail(outputPath, outputFilename);
+      } catch (thumbError) {
+        console.warn('⚠️ Thumbnail generation failed:', thumbError.message);
+      }
+    }
+
+    // Generate preview sizes if requested
+    let previewUrls = {};
+    if (generatePreviews) {
+      try {
+        previewUrls = await this.generatePreviews(outputPath, outputFilename);
+      } catch (previewError) {
+        console.warn('⚠️ Preview generation failed:', previewError.message);
+      }
+    }
+
+    const result = {
+      filePath: outputPath,
+      filename: outputFilename,
+      thumbnailUrl,
+      previewUrls,
+      publicUrl: `${process.env.BASE_URL || 'http://localhost:3001'}/uploads/content/assets/${outputFilename}`,
+      fileSize: stats.size,
+      dimensions: { 
+        width: processedInfo.width, 
+        height: processedInfo.height 
+      },
+      processed: true
+    };
+
+    console.log(`✅ Image processing completed:`, {
+      filename: result.filename,
+      size: `${result.dimensions.width}x${result.dimensions.height}`,
+      fileSize: `${Math.round(result.fileSize / 1024)}KB`,
+      hasThumbnail: !!result.thumbnailUrl,
+      previewCount: Object.keys(result.previewUrls).length
+    });
+
+    return result;
+
+  } catch (error) {
+    console.error('❌ Image processing failed:', error);
+    throw new Error(`Image processing failed: ${error.message}`);
+  }
+}
+
+/**
+ * Generate thumbnail with error handling
+ */
+async generateThumbnail(imagePath, originalFilename) {
+  try {
+    const sharp = require('sharp');
+    const thumbnailFilename = `thumb_${originalFilename}`;
+    const thumbnailPath = path.join(this.directories.thumbnails, thumbnailFilename);
+    
+    await fs.mkdir(this.directories.thumbnails, { recursive: true });
+    
+    await sharp(imagePath)
+      .resize(200, 200, {
+        fit: 'cover',
+        position: 'center'
+      })
+      .jpeg({ quality: 80 })
+      .toFile(thumbnailPath);
+    
+    return `${process.env.BASE_URL || 'http://localhost:3001'}/uploads/content/thumbnails/${thumbnailFilename}`;
+  } catch (error) {
+    console.error('Thumbnail generation error:', error);
+    return null;
+  }
+}
+
+/**
+ * Generate multiple preview sizes with error handling
+ */
+async generatePreviews(imagePath, originalFilename) {
+  const previewSizes = {
+    small: { width: 400, height: 300 },
+    medium: { width: 800, height: 600 },
+    large: { width: 1200, height: 900 }
+  };
+  
+  const previewUrls = {};
+  
+  await fs.mkdir(this.directories.previews, { recursive: true });
+  
+  for (const [size, dimensions] of Object.entries(previewSizes)) {
+    try {
+      const sharp = require('sharp');
+      const previewFilename = `${size}_${originalFilename}`;
+      const previewPath = path.join(this.directories.previews, previewFilename);
+      
+      await sharp(imagePath)
+        .resize(dimensions.width, dimensions.height, {
+          fit: 'inside',
+          withoutEnlargement: true
+        })
+        .jpeg({ quality: 85 })
+        .toFile(previewPath);
+      
+      previewUrls[size] = `${process.env.BASE_URL || 'http://localhost:3001'}/uploads/content/previews/${previewFilename}`;
     } catch (error) {
-      console.error('❌ Error processing image:', error);
-      return { dimensions: {}, thumbnailUrl: null, previewUrls: {} };
+      console.warn(`Preview generation failed for size ${size}:`, error.message);
     }
   }
+  
+  return previewUrls;
+}
+
+
+
+
 
   async processVideo(file, fileName, baseUrl) {
     try {

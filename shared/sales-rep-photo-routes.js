@@ -10,6 +10,7 @@ const { Readable } = require('stream');
 const csv = require('csv-parser');
 const axios = require('axios');
 const bcrypt = require('bcrypt');
+const { Op } = require('sequelize');
 
 // Configure multer for photo uploads - FIXED to use memoryStorage
 const upload = multer({
@@ -343,243 +344,410 @@ function parseCsvBuffer(buffer) {
 module.exports = function(app, sequelize, authenticateToken, contentService) {
   const router = express.Router();
   const { ContentAsset } = sequelize.models;
+// shared/sales-rep-photo-routes.js - Fixed upload handling
 
-  // Upload sales rep photo with FIXED error handling
-  router.post('/sales-rep-photos/upload', authenticateToken, upload.single('photo'), async (req, res) => {
-    try {
-      const { repEmail, repName } = req.body;
-      const normalizedEmail = repEmail.toLowerCase().trim();
-      
-      console.log('📧 Received request:', { repEmail: normalizedEmail, repName, hasFile: !!req.file });
-      
-      if (!repEmail) {
-        return res.status(400).json({ error: 'Sales rep email is required' });
-      }
-      
-      if (!req.file) {
-        return res.status(400).json({ error: 'Photo file is required' });
-      }
+// Upload single sales rep photo with enhanced error handling
+router.post('/sales-rep-photos/upload', authenticateToken, upload.single('photo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No photo file uploaded' });
+    }
 
-      console.log('📤 File debug info:', {
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size,
-        hasBuffer: !!req.file.buffer
+    const repEmail = (req.body.repEmail || '').toLowerCase().trim();
+    const repName = req.body.repName || '';
+
+    if (!repEmail) {
+      return res.status(400).json({ error: 'Rep email is required' });
+    }
+
+    console.log(`📸 Processing sales rep photo upload:`, {
+      repEmail,
+      repName,
+      filename: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    });
+
+    // Validate file type
+    if (!req.file.mimetype.startsWith('image/')) {
+      return res.status(400).json({ error: 'File must be an image' });
+    }
+
+    // Validate file size (10MB limit for photos)
+    if (req.file.size > 10 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Image too large. Maximum size is 10MB.' });
+    }
+
+    // Check for existing photo
+    const normalizedEmail = repEmail.toLowerCase().trim();
+    const existingAsset = await ContentAsset.findOne({
+      where: {
+        tenantId: req.user.tenantId,
+        [Op.or]: [
+          sequelize.where(
+            sequelize.fn('LOWER', sequelize.json('metadata.repEmail')),
+            normalizedEmail
+          ),
+          sequelize.where(
+            sequelize.fn('LOWER', sequelize.json('metadata.rep_email')),
+            normalizedEmail
+          ),
+          sequelize.where(
+            sequelize.fn('LOWER', sequelize.json('metadata.email')),
+            normalizedEmail
+          )
+        ]
+      }
+    });
+
+    if (existingAsset && !req.body.replace) {
+      return res.status(409).json({ 
+        error: 'Photo already exists for this sales rep. Set replace=true to update.' 
       });
+    }
 
-      // FIXED: Check if photo already exists for this email - Enhanced with compatibility
-      console.log('🔍 Checking for existing photo for email:', normalizedEmail);
-      
-      // Use a simpler approach to avoid the bind/replacements conflict
-      const existingAsset = await ContentAsset.findOne({
-        where: {
-          tenantId: req.user.tenantId,
-          [sequelize.Sequelize.Op.or]: [
-            sequelize.literal(`metadata->>'repEmail' = '${normalizedEmail}'`),
-            sequelize.literal(`metadata->>'rep_email' = '${normalizedEmail}'`),
-            sequelize.literal(`metadata->>'email' = '${normalizedEmail}'`)
-          ]
-        }
-      });
-
-      if (existingAsset && !req.body.replace) {
-        return res.status(409).json({ 
-          error: 'Photo already exists for this sales rep. Set replace=true to update.' 
-        });
-      }
-
-      // Delete existing asset if replacing
-      if (existingAsset && req.body.replace) {
-        console.log('🗑️ Deleting existing asset for replacement');
+    // Delete existing asset if replacing
+    if (existingAsset && req.body.replace) {
+      console.log('🗑️ Deleting existing asset for replacement');
+      try {
         await existingAsset.destroy();
+      } catch (deleteError) {
+        console.warn('⚠️ Failed to delete existing asset:', deleteError.message);
       }
+    }
 
-      // Prepare metadata for ContentCreationService
-      const metadata = {
-        name: `Sales Rep Photo - ${repName || normalizedEmail}`,
-        tags: ['sales-rep', 'profile', 'photo'],
-        categories: ['Sales Reps'],
-        metadata: {
-          repEmail: normalizedEmail,
-          repName: repName || null,
-          uploadedBy: req.user.email || req.user.username,
-          originalFilename: req.file.originalname,
-          uploadedAt: new Date().toISOString()
-        }
-      };
+    // Prepare metadata for ContentCreationService
+    const metadata = {
+      name: `Sales Rep Photo - ${repName || normalizedEmail}`,
+      tags: ['sales-rep', 'profile', 'photo'],
+      categories: ['Sales Reps'],
+      metadata: {
+        repEmail: normalizedEmail,
+        repName: repName || null,
+        uploadedBy: req.user.email || req.user.username,
+        originalFilename: req.file.originalname,
+        uploadedAt: new Date().toISOString()
+      }
+    };
 
-      console.log('🚀 Using ContentCreationService for upload with image processing...');
-      
+    console.log('🚀 Using ContentCreationService for upload with image processing...');
+    
+    let asset;
+    try {
       // Use ContentCreationService to get thumbnails and previews automatically
-      const asset = await contentService.uploadAsset(
+      asset = await contentService.uploadAsset(
         req.user.tenantId,
         req.user.id,
         req.file,
         metadata
       );
-
-      const repPhotoDir = contentService.directories.salesRepPhotos;
-      await fs.mkdir(repPhotoDir, { recursive: true });
-      const origName = path.basename(asset.filePath);
-      const origDest = path.join(repPhotoDir, origName);
-      await fs.copyFile(asset.filePath, origDest);
-
-      // Copy thumbnails to sales rep specific directories
+    } catch (uploadError) {
+      console.error('❌ Content service upload failed:', uploadError.message);
+      
+      // Fallback: Create basic asset record without processing
       try {
-        const thumbName = path.basename(asset.thumbnailUrl || '');
+        const timestamp = Date.now();
+        const safeFilename = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const fallbackFilename = `fallback_${timestamp}_${safeFilename}`;
+        const fallbackPath = path.join(process.cwd(), 'uploads', 'content', 'assets', fallbackFilename);
+        
+        // Ensure directory exists
+        await fs.mkdir(path.dirname(fallbackPath), { recursive: true });
+        
+        // Save file
+        await fs.writeFile(fallbackPath, req.file.buffer);
+        
+        // Create asset record
+        asset = await ContentAsset.create({
+          tenantId: req.user.tenantId,
+          name: metadata.name,
+          filename: fallbackFilename,
+          filePath: fallbackPath,
+          fileSize: req.file.size,
+          mimeType: req.file.mimetype,
+          assetType: 'image',
+          publicUrl: `${req.protocol}://${req.get('host')}/uploads/content/assets/${fallbackFilename}`,
+          thumbnailUrl: null,
+          previewUrls: {},
+          uploadedBy: req.user.id,
+          tags: metadata.tags,
+          categories: metadata.categories,
+          metadata: metadata.metadata,
+          processingStatus: 'failed_processed_manually'
+        });
+        
+        console.log('✅ Created fallback asset record');
+      } catch (fallbackError) {
+        console.error('❌ Fallback asset creation also failed:', fallbackError.message);
+        return res.status(500).json({ 
+          error: 'Failed to upload photo: ' + uploadError.message,
+          fallbackError: fallbackError.message
+        });
+      }
+    }
+
+    // Copy to specialized directories (if processing was successful)
+    try {
+      if (asset.thumbnailUrl && asset.previewUrls) {
+        const repPhotoDir = contentService.directories.salesRepPhotos;
         const repThumbDir = contentService.directories.salesRepThumbnails;
         const repPreviewDir = contentService.directories.salesRepPreviews;
+        
+        await fs.mkdir(repPhotoDir, { recursive: true });
         await fs.mkdir(repThumbDir, { recursive: true });
         await fs.mkdir(repPreviewDir, { recursive: true });
 
-        if (thumbName) {
-          const src = path.join(contentService.directories.thumbnails, thumbName);
-          const dest = path.join(repThumbDir, thumbName);
-          await fs.copyFile(src, dest);
-          asset.thumbnailUrl = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-thumbnails/${thumbName}`;
+        // Copy original
+        if (asset.filePath) {
+          const origName = path.basename(asset.filePath);
+          const origDest = path.join(repPhotoDir, origName);
+          try {
+            await fs.copyFile(asset.filePath, origDest);
+          } catch (copyError) {
+            console.warn('⚠️ Failed to copy original to rep photos dir:', copyError.message);
+          }
         }
 
+        // Copy thumbnail
+        if (asset.thumbnailUrl) {
+          const thumbName = path.basename(asset.thumbnailUrl);
+          const thumbSrc = path.join(contentService.directories.thumbnails, thumbName);
+          const thumbDest = path.join(repThumbDir, thumbName);
+          try {
+            await fs.copyFile(thumbSrc, thumbDest);
+            asset.thumbnailUrl = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-thumbnails/${thumbName}`;
+          } catch (copyError) {
+            console.warn('⚠️ Failed to copy thumbnail:', copyError.message);
+          }
+        }
+
+        // Copy previews
         const newPreviews = {};
         for (const [size, url] of Object.entries(asset.previewUrls || {})) {
-          const name = path.basename(url);
-          const src = path.join(contentService.directories.previews, name);
-          const dest = path.join(repPreviewDir, name);
-          await fs.copyFile(src, dest);
-          newPreviews[size] = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-previews/${name}`;
+          const previewName = path.basename(url);
+          const previewSrc = path.join(contentService.directories.previews, previewName);
+          const previewDest = path.join(repPreviewDir, previewName);
+          try {
+            await fs.copyFile(previewSrc, previewDest);
+            newPreviews[size] = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-previews/${previewName}`;
+          } catch (copyError) {
+            console.warn(`⚠️ Failed to copy ${size} preview:`, copyError.message);
+            newPreviews[size] = url; // Keep original URL
+          }
         }
 
-
-        await asset.update({
-          thumbnailUrl: asset.thumbnailUrl,
-          previewUrls: newPreviews
-        });
-
-        console.log('✅ Asset uploaded with thumbnails:', {
-          id: asset.id,
-          thumbnailUrl: asset.thumbnailUrl,
-          previewCount: Object.keys(newPreviews).length
-        });
-
-      } catch (thumbErr) {
-        console.warn('⚠️ Failed to persist sales rep thumbnails:', thumbErr.message);
+        // Update asset with new URLs
+        if (Object.keys(newPreviews).length > 0) {
+          try {
+            await asset.update({ 
+              thumbnailUrl: asset.thumbnailUrl,
+              previewUrls: newPreviews 
+            });
+          } catch (updateError) {
+            console.warn('⚠️ Failed to update asset URLs:', updateError.message);
+          }
+        }
       }
-
-      res.json({
-        message: 'Sales rep photo uploaded successfully',
-        asset: {
-          id: asset.id,
-          name: asset.name,
-          url: asset.publicUrl,
-          thumbnailUrl: asset.thumbnailUrl,
-          previewUrls: asset.previewUrls,
-          repEmail: normalizedEmail,
-          repName: repName
-        }
-      });
-
-    } catch (error) {
-      console.error('Error uploading sales rep photo:', error);
-      res.status(400).json({ error: error.message });
+    } catch (dirError) {
+      console.warn('⚠️ Failed to copy to specialized directories:', dirError.message);
     }
-  });
 
-  // Bulk upload photos using a CSV with name,email,photoUrl columns
-  router.post('/sales-rep-photos/bulk-csv', authenticateToken, csvUpload.single('csv'), async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: 'CSV file is required' });
+    console.log('✅ Sales rep photo upload completed:', {
+      id: asset.id,
+      repEmail: normalizedEmail,
+      repName: repName,
+      hasProcessing: !!asset.thumbnailUrl
+    });
+
+    res.json({
+      message: 'Sales rep photo uploaded successfully',
+      asset: {
+        id: asset.id,
+        name: asset.name,
+        url: asset.publicUrl,
+        thumbnailUrl: asset.thumbnailUrl,
+        previewUrls: asset.previewUrls,
+        repEmail: normalizedEmail,
+        repName: repName,
+        processed: asset.processingStatus !== 'failed_processed_manually'
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Sales rep photo upload error:', error);
+    res.status(500).json({ 
+      error: 'Failed to upload sales rep photo: ' + error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// Enhanced bulk upload with better error handling
+router.post('/sales-rep-photos/bulk-csv', authenticateToken, csvUpload.single('csv'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'CSV file is required' });
+    }
+
+    console.log('📊 Processing bulk CSV upload:', {
+      filename: req.file.originalname,
+      size: req.file.size
+    });
+
+    const rows = await parseCsvBuffer(req.file.buffer);
+    const successes = [];
+    const failures = [];
+
+    console.log(`📋 Processing ${rows.length} rows from CSV`);
+
+    for (const [index, row] of rows.entries()) {
+      const email = (row.email || row.repEmail || row.rep_email || '').toLowerCase().trim();
+      const name = row.name || row.repName || row.rep_name || '';
+      const photoUrl = row.photoUrl || row.photo_url || row.url || '';
+
+      console.log(`📝 Processing row ${index + 1}:`, { email, name, photoUrl: photoUrl.substring(0, 50) + '...' });
+
+      if (!email || !photoUrl) {
+        failures.push({ 
+          row: index + 1, 
+          email, 
+          error: 'Missing email or photoUrl' 
+        });
+        continue;
       }
 
-      const rows = await parseCsvBuffer(req.file.buffer);
-      const successes = [];
-      const failures = [];
+      try {
+        // Download image with timeout and better error handling
+        console.log(`🌐 Downloading image for ${email}...`);
+        
+        const response = await axios.get(photoUrl, { 
+          responseType: 'arraybuffer', 
+          timeout: 30000, // 30 second timeout
+          maxContentLength: 10 * 1024 * 1024, // 10MB limit
+          headers: {
+            'User-Agent': 'Knittt-Sales-Rep-Photo-Uploader/1.0'
+          }
+        });
 
-      for (const row of rows) {
-        const email = (row.email || row.repEmail || row.rep_email || '').toLowerCase().trim();
-        const name = row.name || row.repName || row.rep_name || '';
-        const photoUrl = row.photoUrl || row.photo_url || row.url || '';
-
-        if (!email || !photoUrl) {
-          failures.push({ row, error: 'Missing email or photoUrl' });
-          continue;
+        if (!response.data || response.data.length === 0) {
+          throw new Error('Downloaded file is empty');
         }
 
+        // Validate content type
+        const contentType = response.headers['content-type'] || '';
+        if (!contentType.startsWith('image/')) {
+          throw new Error(`Invalid content type: ${contentType}`);
+        }
+
+        // Create file object
+        const file = {
+          originalname: path.basename(new URL(photoUrl).pathname) || `photo_${email}.jpg`,
+          mimetype: contentType,
+          buffer: Buffer.from(response.data),
+          size: response.data.length
+        };
+
+        console.log(`📸 Processing image for ${email}:`, {
+          size: file.size,
+          type: file.mimetype
+        });
+
+        // Prepare metadata
+        const metadata = {
+          name: `Sales Rep Photo - ${name || email}`,
+          tags: ['sales-rep', 'profile', 'photo', 'bulk-upload'],
+          categories: ['Sales Reps'],
+          metadata: {
+            repEmail: email,
+            repName: name || null,
+            uploadedBy: req.user.email || req.user.username,
+            originalUrl: photoUrl,
+            uploadedAt: new Date().toISOString(),
+            bulkUpload: true
+          }
+        };
+
+        // Upload using content service
+        let asset;
         try {
-          const response = await axios.get(photoUrl, { responseType: 'arraybuffer', timeout: 15000 });
-          const file = {
-            originalname: path.basename(new URL(photoUrl).pathname || 'photo.jpg'),
-            mimetype: response.headers['content-type'] || 'image/jpeg',
-            buffer: Buffer.from(response.data),
-            size: response.data.length
-          };
-
-          const metadata = {
-            name: `Sales Rep Photo - ${name || email}`,
-            tags: ['sales-rep', 'profile', 'photo'],
-            categories: ['Sales Reps'],
-            metadata: {
-              repEmail: email,
-              repName: name || null,
-              uploadedBy: req.user.email || req.user.username,
-              originalUrl: photoUrl,
-              uploadedAt: new Date().toISOString()
-            }
-          };
-
-          const asset = await contentService.uploadAsset(
+          asset = await contentService.uploadAsset(
             req.user.tenantId,
             req.user.id,
             file,
             metadata
           );
-
-          try {
-            const thumbName = path.basename(asset.thumbnailUrl || '');
-            const repThumbDir = contentService.directories.salesRepThumbnails;
-            const repPreviewDir = contentService.directories.salesRepPreviews;
-            await fs.mkdir(repThumbDir, { recursive: true });
-            await fs.mkdir(repPreviewDir, { recursive: true });
-
-            if (thumbName) {
-              const src = path.join(contentService.directories.thumbnails, thumbName);
-              const dest = path.join(repThumbDir, thumbName);
-              await fs.copyFile(src, dest);
-              asset.thumbnailUrl = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-thumbnails/${thumbName}`;
-            }
-
-            const newPreviews = {};
-            for (const [size, url] of Object.entries(asset.previewUrls || {})) {
-              const namePart = path.basename(url);
-              const src = path.join(contentService.directories.previews, namePart);
-              const dest = path.join(repPreviewDir, namePart);
-              await fs.copyFile(src, dest);
-              newPreviews[size] = `${req.protocol}://${req.get('host')}/uploads/content/sales-rep-previews/${namePart}`;
-            }
-
-            const repPhotoDir = contentService.directories.salesRepPhotos;
-            await fs.mkdir(repPhotoDir, { recursive: true });
-            const origName = path.basename(asset.filePath);
-            const origDest = path.join(repPhotoDir, origName);
-            await fs.copyFile(asset.filePath, origDest);
-
-            await asset.update({ thumbnailUrl: asset.thumbnailUrl, previewUrls: newPreviews });
-          } catch (thumbErr) {
-            console.warn('⚠️ Failed to persist sales rep thumbnails:', thumbErr.message);
-          }
-
-          successes.push({ email, assetId: asset.id });
-        } catch (err) {
-          failures.push({ email, error: err.message });
+        } catch (uploadError) {
+          console.warn(`⚠️ Content service upload failed for ${email}, trying fallback:`, uploadError.message);
+          
+          // Fallback upload
+          const timestamp = Date.now();
+          const safeFilename = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+          const fallbackFilename = `bulk_fallback_${timestamp}_${safeFilename}`;
+          const fallbackPath = path.join(process.cwd(), 'uploads', 'content', 'assets', fallbackFilename);
+          
+          await fs.mkdir(path.dirname(fallbackPath), { recursive: true });
+          await fs.writeFile(fallbackPath, file.buffer);
+          
+          asset = await ContentAsset.create({
+            tenantId: req.user.tenantId,
+            name: metadata.name,
+            filename: fallbackFilename,
+            filePath: fallbackPath,
+            fileSize: file.size,
+            mimeType: file.mimetype,
+            assetType: 'image',
+            publicUrl: `${req.protocol}://${req.get('host')}/uploads/content/assets/${fallbackFilename}`,
+            thumbnailUrl: null,
+            previewUrls: {},
+            uploadedBy: req.user.id,
+            tags: metadata.tags,
+            categories: metadata.categories,
+            metadata: metadata.metadata,
+            processingStatus: 'fallback_upload'
+          });
         }
+
+        successes.push({ 
+          row: index + 1,
+          email, 
+          name,
+          assetId: asset.id,
+          processed: asset.processingStatus !== 'fallback_upload'
+        });
+
+        console.log(`✅ Successfully processed ${email}`);
+
+      } catch (err) {
+        console.error(`❌ Failed to process ${email}:`, err.message);
+        failures.push({ 
+          row: index + 1,
+          email, 
+          error: err.message 
+        });
       }
-
-      res.json({ message: 'Bulk CSV upload processed', successes, failures });
-    } catch (error) {
-      console.error('Error processing bulk CSV upload:', error);
-      res.status(400).json({ error: error.message });
     }
-  });
 
+    console.log(`📊 Bulk upload completed: ${successes.length} success, ${failures.length} failed`);
+
+    res.json({ 
+      message: `Bulk CSV upload processed: ${successes.length} successful, ${failures.length} failed`,
+      successes, 
+      failures,
+      summary: {
+        total: rows.length,
+        successful: successes.length,
+        failed: failures.length,
+        successRate: rows.length > 0 ? Math.round((successes.length / rows.length) * 100) : 0
+      }
+    });
+  } catch (error) {
+    console.error('❌ Bulk CSV upload error:', error);
+    res.status(500).json({ 
+      error: 'Bulk upload failed: ' + error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
   // Get all sales rep photos - simplified query
  // Get all sales rep photos - simplified query
 router.get('/sales-rep-photos', authenticateToken, async (req, res) => {

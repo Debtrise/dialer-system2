@@ -730,6 +730,377 @@ module.exports = function(app, sequelize, authenticateToken, webhookModels, webh
       res.status(400).json({ error: error.message });
     }
   });
+
+
+
+// shared/webhook-routes.js - Updated routes for template-based announcements
+
+// ===== TEMPLATE-SPECIFIC WEBHOOK ROUTES =====
+
+// Get available templates for webhook configuration
+router.get('/webhooks/templates', authenticateToken, async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+    const { category, search, page = 1, limit = 20 } = req.query;
+    
+    // Get templates suitable for announcements
+    const options = {
+      category: category || 'announcement', // Default to announcement templates
+      search,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      isPublic: undefined // Include both public and tenant-specific templates
+    };
+    
+    // Assuming contentService is available through webhook service
+    const templates = await webhookService.getTemplatesForWebhooks(tenantId, options);
+    
+    res.json({
+      templates: templates.templates.map(template => ({
+        id: template.id,
+        name: template.name,
+        description: template.description,
+        category: template.category,
+        previewImage: template.previewImage,
+        variables: template.variables,
+        difficulty: template.difficulty,
+        estimatedTime: template.estimatedTime,
+        isPublic: template.isPublic
+      })),
+      pagination: templates.pagination,
+      message: `Retrieved ${templates.templates.length} templates for webhooks`
+    });
+  } catch (error) {
+    console.error('Error getting webhook templates:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Get template details with variables for webhook configuration
+router.get('/webhooks/templates/:templateId', authenticateToken, async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+    const templateId = req.params.templateId;
+    
+    const template = await webhookService.getTemplateForWebhook(templateId, tenantId);
+    
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    
+    // Extract variable information from template
+    const templateVariables = await webhookService.extractTemplateVariables(template);
+    
+    res.json({
+      template: {
+        id: template.id,
+        name: template.name,
+        description: template.description,
+        category: template.category,
+        previewImage: template.previewImage,
+        variables: template.variables,
+        templateData: template.templateData
+      },
+      extractedVariables: templateVariables,
+      suggestedMapping: webhookService.generateSuggestedVariableMapping(templateVariables),
+      message: 'Template details retrieved successfully'
+    });
+  } catch (error) {
+    console.error('Error getting template details:', error);
+    res.status(404).json({ error: error.message });
+  }
+});
+
+// Validate template configuration for webhook
+router.post('/webhooks/templates/:templateId/validate', authenticateToken, async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+    const templateId = req.params.templateId;
+    const { variableMapping, defaultValues, testPayload } = req.body;
+    
+    const validation = await webhookService.validateTemplateConfiguration(
+      templateId,
+      tenantId,
+      {
+        variableMapping: variableMapping || {},
+        defaultValues: defaultValues || {},
+        testPayload: testPayload || {}
+      }
+    );
+    
+    res.json({
+      isValid: validation.isValid,
+      errors: validation.errors,
+      warnings: validation.warnings,
+      templateVariables: validation.templateVariables,
+      mappedVariables: validation.mappedVariables,
+      missingVariables: validation.missingVariables,
+      testResults: validation.testResults
+    });
+  } catch (error) {
+    console.error('Error validating template configuration:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Create webhook with template configuration
+router.post('/webhooks/with-template', authenticateToken, async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+    const {
+      name,
+      description,
+      templateId,
+      variableMapping,
+      defaultValues,
+      displaySelection,
+      takeover,
+      scheduling,
+      advanced
+    } = req.body;
+    
+    // Validate template exists and is accessible
+    const template = await webhookService.getTemplateForWebhook(templateId, tenantId);
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found or not accessible' });
+    }
+    
+    // Create webhook configuration
+    const webhookData = {
+      name,
+      description,
+      webhookType: 'announcement',
+      announcementConfig: {
+        enabled: true,
+        contentCreator: {
+          templateId,
+          templateName: template.name,
+          generateNewContent: true,
+          variableMapping: variableMapping || {},
+          defaultValues: defaultValues || {},
+          projectSettings: {
+            name: `${name} - {system.timestamp}`,
+            addTimestamp: true,
+            customNamePattern: req.body.projectNamePattern || null
+          }
+        },
+        optisigns: {
+          displaySelection: displaySelection || { mode: 'all' },
+          takeover: takeover || {
+            priority: 'NORMAL',
+            duration: 30,
+            restoreAfter: true
+          },
+          scheduling: scheduling || { immediate: true }
+        },
+        advanced: advanced || webhookModels.WebhookEndpoint.getDefaultAnnouncementConfig().advanced
+      },
+      isActive: true
+    };
+    
+    const webhook = await webhookService.createWebhookEndpoint({
+      ...webhookData,
+      tenantId
+    });
+    
+    res.status(201).json({
+      ...webhook.toJSON(),
+      webhookUrl: `${req.protocol}://${req.get('host')}/api/webhook-receiver/${webhook.endpointKey}`,
+      templateInfo: {
+        id: template.id,
+        name: template.name,
+        category: template.category
+      },
+      message: 'Webhook created successfully with template configuration'
+    });
+  } catch (error) {
+    console.error('Error creating webhook with template:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Test webhook with template
+router.post('/webhooks/:id/test-with-template', authenticateToken, async (req, res) => {
+  try {
+    const webhookId = req.params.id;
+    const tenantId = req.user.tenantId;
+    const payload = req.body;
+    
+    const webhook = await webhookService.getWebhookEndpoint(webhookId, tenantId);
+    
+    if (!webhook || webhook.webhookType !== 'announcement') {
+      return res.status(404).json({ error: 'Announcement webhook not found' });
+    }
+    
+    const templateId = webhook.announcementConfig?.contentCreator?.templateId;
+    if (!templateId) {
+      return res.status(400).json({ error: 'Webhook does not have a template configured' });
+    }
+    
+    // Test the template configuration with the payload
+    const testResult = await webhookService.testTemplateWithPayload(
+      templateId,
+      webhook.announcementConfig,
+      payload,
+      tenantId
+    );
+    
+    res.json({
+      webhookId: webhook.id,
+      webhookName: webhook.name,
+      templateId,
+      templateName: webhook.announcementConfig.contentCreator.templateName,
+      testResult,
+      message: 'Template test completed'
+    });
+  } catch (error) {
+    console.error('Error testing webhook with template:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Get webhook template preview
+router.get('/webhooks/:id/template-preview', authenticateToken, async (req, res) => {
+  try {
+    const webhookId = req.params.id;
+    const tenantId = req.user.tenantId;
+    const { samplePayload } = req.query;
+    
+    const webhook = await webhookService.getWebhookEndpoint(webhookId, tenantId);
+    
+    if (!webhook || webhook.webhookType !== 'announcement') {
+      return res.status(404).json({ error: 'Announcement webhook not found' });
+    }
+    
+    const templateId = webhook.announcementConfig?.contentCreator?.templateId;
+    if (!templateId) {
+      return res.status(400).json({ error: 'Webhook does not have a template configured' });
+    }
+    
+    // Generate preview with sample data
+    const preview = await webhookService.generateTemplatePreview(
+      templateId,
+      webhook.announcementConfig,
+      samplePayload ? JSON.parse(samplePayload) : {},
+      tenantId
+    );
+    
+    res.json({
+      templateId,
+      templateName: webhook.announcementConfig.contentCreator.templateName,
+      preview,
+      message: 'Template preview generated successfully'
+    });
+  } catch (error) {
+    console.error('Error generating template preview:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// ===== MIGRATION ENDPOINT =====
+
+// Migrate existing announcement webhooks from projectId to templateId
+router.post('/webhooks/migrate-to-templates', authenticateToken, async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+    
+    // Only allow this for admin users or specific tenants
+    if (!req.user.isAdmin && req.user.tenantId !== 'system') {
+      return res.status(403).json({ error: 'Migration endpoint requires admin access' });
+    }
+    
+    const migrationResult = await webhookModels.WebhookEndpoint.migrateAnnouncementConfigs(
+      sequelize
+    );
+    
+    res.json({
+      message: 'Migration completed',
+      migratedCount: migrationResult.migratedCount,
+      errorCount: migrationResult.errorCount,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error during migration:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ===== UPDATED WEBHOOK CONFIGURATION ENDPOINTS =====
+
+// Get webhook type configuration options (updated for templates)
+router.get('/webhooks/types/config-options', authenticateToken, async (req, res) => {
+  try {
+    const configOptions = {
+      go: {
+        name: 'Go',
+        description: 'Create leads and process them through journeys',
+        configFields: [
+          'fieldMapping',
+          'validationRules',
+          'autoTagRules',
+          'autoEnrollJourneyId',
+          'conditionalRules'
+        ],
+        defaultActions: ['create_lead', 'enroll_journey']
+      },
+      pause: {
+        name: 'Pause',
+        description: 'Pause existing leads and their journeys',
+        configFields: [
+          'fieldMapping',
+          'pauseResumeConfig'
+        ],
+        resumeConditions: [
+          { type: 'timer', label: 'Timer-based Resume', description: 'Resume after specified time delay' },
+          { type: 'status', label: 'Status Change Resume', description: 'Resume when lead status changes' },
+          { type: 'tag', label: 'Tag Change Resume', description: 'Resume when specific tags are added/removed' },
+          { type: 'external', label: 'Manual Resume', description: 'Resume via API or manual trigger' }
+        ]
+      },
+      stop: {
+        name: 'Stop',
+        description: 'Stop leads and exit them from journeys',
+        configFields: [
+          'fieldMapping',
+          'stopConfig'
+        ]
+      },
+      announcement: {
+        name: 'Announcement',
+        description: 'Create dynamic announcements using templates',
+        configFields: [
+          'templateId', // UPDATED: Use templateId instead of projectId
+          'variableMapping',
+          'defaultValues',
+          'displaySelection',
+          'takeover',
+          'scheduling',
+          'triggerConditions'
+        ],
+        templateFields: [
+          'templateId',
+          'variableMapping',
+          'defaultValues'
+        ],
+        displayFields: [
+          'displaySelection',
+          'takeover',
+          'scheduling'
+        ],
+        advancedFields: [
+          'triggerConditions',
+          'errorHandling',
+          'metrics'
+        ]
+      }
+    };
+    
+    res.json(configOptions);
+  } catch (error) {
+    console.error('Error getting config options:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
   
   // Get available action types (enhanced for webhook types)
   router.get('/webhooks/action-types', authenticateToken, async (req, res) => {

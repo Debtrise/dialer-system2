@@ -1,4 +1,4 @@
-// webhook-models.js
+// shared/webhook-models.js
 // Models for the webhook ingestion system with go/pause/stop/announcement configuration
 
 module.exports = (sequelize, DataTypes) => {
@@ -88,24 +88,24 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.JSONB,
       defaultValue: {
         enabled: false,
-        // Content Creator Integration
+        // Content Creator Integration - UPDATED TO USE TEMPLATES
         contentCreator: {
-          templateId: null, // Content creator template ID to use
+          templateId: null, // Content creator TEMPLATE ID to use (changed from projectId)
           templateName: null, // Human-readable template name
           generateNewContent: true, // Whether to create new content or use existing
-          // Map webhook payload fields to content variables
+          // Map webhook payload fields to template variables
           variableMapping: {
-            // Example: "rep_name": "payload.rep_name"
-            // Example: "deal_amount": "payload.amount"
-            // Example: "company_name": "payload.company"
+            // Example: "rep_name": "rep_name"
+            // Example: "deal_amount": "amount"
+            // Example: "company_name": "company"
           },
           // Default values for variables if not found in payload
           defaultValues: {},
-          // Content project settings
+          // Content project settings (for generated projects)
           projectSettings: {
             name: "Webhook Announcement", // Default project name pattern
             addTimestamp: true, // Add timestamp to project name
-            customNamePattern: null // Custom naming pattern with variables
+            customNamePattern: null // Custom naming pattern with variables like "Deal Closed - {rep_name} - {company_name}"
           }
         },
         // OptiSigns Integration
@@ -116,159 +116,138 @@ module.exports = (sequelize, DataTypes) => {
             displayIds: [], // Specific display IDs when mode is 'specific'
             displayGroups: [], // Display group names when mode is 'group'
             // Conditional display selection based on webhook data
-            conditionalRules: {
+            conditionalSelection: {
               enabled: false,
               conditions: [
-                // Example: { field: "region", operator: "equals", value: "west", displayIds: ["display1", "display2"] }
+                // Example: { field: 'location', operator: 'equals', value: 'office_main' }
               ]
             }
           },
-          // Takeover settings
+          // Takeover configuration
           takeover: {
-            priority: 'HIGH', // 'LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'
-            duration: 30, // Duration in seconds (null for indefinite)
-            restoreAfter: true, // Restore previous content after duration
-            immediateDisplay: true, // Display immediately or queue
-            // Override existing takeovers
-            overrideTakeovers: {
-              enabled: false,
-              allowedPriorities: ['LOW', 'MEDIUM'] // Only override these priority levels
-            }
+            priority: 'NORMAL', // 'LOW', 'NORMAL', 'HIGH', 'EMERGENCY'
+            duration: 30, // Duration in seconds, null for permanent
+            restoreAfter: true, // Restore original content after takeover
+            interruptCurrent: true // Interrupt currently playing content
           },
-          // Content display settings
-          display: {
-            fadeTransition: true, // Use fade transition
-            transitionDuration: 1000, // Transition duration in milliseconds
-            backgroundMusic: false, // Play background music/sound
-            soundEffects: {
-              enabled: false,
-              playOnStart: null, // Sound file to play when announcement starts
-              playOnEnd: null // Sound file to play when announcement ends
-            }
+          // Scheduling
+          scheduling: {
+            immediate: true, // Execute immediately
+            delay: 0, // Delay in seconds before execution
+            scheduledTime: null, // Specific time to execute (ISO string)
+            timezone: 'UTC' // Timezone for scheduled execution
           }
         },
-        // Advanced announcement settings
+        // Advanced Configuration
         advanced: {
-          // Conditions for triggering announcement
+          // Trigger conditions
           triggerConditions: {
             enabled: false,
-            // Only trigger during certain hours
+            // Time-based restrictions
             timeRestrictions: {
               enabled: false,
-              startTime: "09:00", // Format: "HH:MM"
-              endTime: "17:00",
-              timezone: "America/New_York",
-              daysOfWeek: [1, 2, 3, 4, 5] // Monday = 1, Sunday = 7
+              allowedHours: { start: 9, end: 17 }, // 9 AM to 5 PM
+              allowedDays: [1, 2, 3, 4, 5], // Monday to Friday (0 = Sunday)
+              timezone: 'UTC'
             },
-            // Minimum time between announcements
+            // Rate limiting
             rateLimiting: {
               enabled: false,
-              minimumInterval: 300, // Seconds between announcements
-              maxPerHour: 10, // Maximum announcements per hour
-              maxPerDay: 50 // Maximum announcements per day
+              maxPerHour: 10,
+              maxPerDay: 50,
+              cooldownMinutes: 5 // Minimum time between announcements
             },
-            // Field-based conditions
+            // Payload-based conditions
             payloadConditions: {
               enabled: false,
               conditions: [
-                // Example: { field: "deal_amount", operator: "greater_than", value: 10000 }
+                // Example: { field: 'deal_amount', operator: 'greaterThan', value: 1000 }
               ]
             }
           },
-          // Post-announcement actions
-          postAnnouncementActions: {
-            enabled: false,
-            actions: [
-              // Example: { type: "create_lead", config: {...} }
-              // Example: { type: "send_notification", config: {...} }
-              // Example: { type: "log_event", config: {...} }
-            ]
+          // Error handling
+          errorHandling: {
+            retryAttempts: 3,
+            retryDelay: 5, // seconds
+            fallbackTemplate: null, // Fallback template ID if primary fails
+            notifyOnFailure: true
           },
-          // Logging and analytics
-          analytics: {
-            trackViews: true, // Track how many displays showed the announcement
-            trackDuration: true, // Track how long announcement was displayed
-            trackEngagement: false, // Track user interaction (if applicable)
-            saveMetrics: true // Save metrics to database
+          // Metrics and tracking
+          metrics: {
+            trackDisplayTime: true,
+            trackViewCount: true,
+            trackEngagement: false,
+            customMetrics: {}
           }
         }
       }
     },
-    // Pause/Resume configuration for pause webhooks
+    // Enhanced conditional rules with action mapping
+    conditionalRules: {
+      type: DataTypes.JSONB,
+      defaultValue: {
+        enabled: false,
+        logicOperator: 'AND', // AND | OR
+        conditionSets: [
+          // Example:
+          // {
+          //   name: 'High Value Deal',
+          //   conditions: [
+          //     { field: 'deal_amount', operator: 'greaterThan', value: 1000 }
+          //   ],
+          //   actions: [
+          //     { type: 'create_lead', config: { brand: 'premium' } }
+          //   ]
+          // }
+        ],
+        defaultActions: [] // Actions to execute if no condition sets match
+      }
+    },
+    // Enhanced pause/resume configuration for pause type webhooks
     pauseResumeConfig: {
       type: DataTypes.JSONB,
       defaultValue: {
-        enabled: false,
+        pauseConditions: {
+          // When to pause leads
+          leadStatus: [], // Pause leads with these statuses
+          leadTags: [], // Pause leads with these tags
+          fieldConditions: [] // Pause based on lead field values
+        },
         resumeConditions: {
-          // Timer-based resume
-          timerResume: {
+          // Automatic resume conditions
+          timer: {
             enabled: false,
-            delayMinutes: 60,
-            delayHours: 0,
-            delayDays: 0
+            duration: 24, // Hours
+            units: 'hours' // hours, minutes, days
           },
-          // Status change resume
-          statusResume: {
+          statusChange: {
             enabled: false,
-            targetStatuses: [], // ['contacted', 'qualified', etc.]
-            checkInterval: 300 // Check every 5 minutes
+            targetStatuses: [] // Resume when lead status changes to these
           },
-          // Tag-based resume
-          tagResume: {
+          tagChange: {
             enabled: false,
-            requiredTags: [], // Resume when lead has these tags
-            excludeTags: [], // Don't resume if lead has these tags
-            checkInterval: 300
+            addedTags: [], // Resume when these tags are added
+            removedTags: [] // Resume when these tags are removed
           },
-          // Custom field resume
-          customFieldResume: {
-            enabled: false,
-            conditions: [
-              // { field: 'status', operator: 'equals', value: 'qualified' }
-            ],
-            checkInterval: 300
+          external: {
+            enabled: true, // Allow manual resume via API
+            webhookUrl: null // Optional webhook to call on resume
           }
         },
-        // Actions to execute on pause
         pauseActions: {
-          stopCalls: true,
-          stopSms: true,
-          stopEmails: false, // Often want to keep emails going
-          addTags: [], // Tags to add when paused
-          updateCustomFields: {} // Custom fields to update
-        },
-        // Actions to execute on resume
-        resumeActions: {
-          resumeCalls: true,
-          resumeSms: true,
-          resumeEmails: true,
-          removeTags: [], // Tags to remove when resumed
-          addTags: [], // Tags to add when resumed
-          triggerJourney: null, // Journey ID to trigger on resume
-          updateCustomFields: {} // Custom fields to update
+          // What to do when pausing
+          setStatus: null, // Set lead status to this
+          addTags: [], // Add these tags
+          removeFromJourneys: true, // Remove from active journeys
+          notifyTeam: false // Send team notification
         }
-      }
-    },
-    // Enhanced conditional execution with multiple condition sets
-    conditionalExecution: {
-      type: DataTypes.JSONB,
-      defaultValue: {
-        enabled: false,
-        logicOperator: 'AND', // AND/OR for multiple condition sets
-        conditionSets: [],
-        defaultActions: [
-          {
-            type: "create_lead",
-            config: {}
-          }
-        ]
       }
     },
     // Execution settings
     executionSettings: {
       type: DataTypes.JSONB,
       defaultValue: {
-        stopOnFirstMatch: true, // Stop processing after first condition set matches
+        stopOnFirstMatch: true, // Stop processing after first condition match
         executeDefaultOnNoMatch: true, // Execute default actions if no conditions match
         logExecution: true, // Log detailed execution steps
         timeoutMs: 30000 // Max execution time in milliseconds
@@ -358,19 +337,21 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW
     },
-    ipAddress: {
-      type: DataTypes.STRING,
-      allowNull: true
-    },
     processingTime: {
       type: DataTypes.INTEGER,
-      allowNull: true,
-      comment: 'Processing time in milliseconds'
+      allowNull: true
     },
-    // Detailed execution log for debugging
     executionLog: {
       type: DataTypes.JSONB,
       defaultValue: {}
+    },
+    headers: {
+      type: DataTypes.JSONB,
+      defaultValue: {}
+    },
+    ipAddress: {
+      type: DataTypes.STRING,
+      allowNull: true
     }
   }, {
     tableName: 'WebhookEvents',
@@ -390,15 +371,15 @@ module.exports = (sequelize, DataTypes) => {
     ]
   });
 
-  // Track lead pause states for pause/resume functionality
+  // Lead pause state tracking for pause/resume webhooks
   const LeadPauseState = sequelize.define('LeadPauseState', {
-    tenantId: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
     leadId: {
       type: DataTypes.INTEGER,
-      allowNull: false
+      allowNull: false,
+      references: {
+        model: 'Leads',
+        key: 'id'
+      }
     },
     webhookEndpointId: {
       type: DataTypes.INTEGER,
@@ -408,16 +389,19 @@ module.exports = (sequelize, DataTypes) => {
         key: 'id'
       }
     },
-    status: {
-      type: DataTypes.ENUM('paused', 'scheduled_resume', 'resumed', 'stopped'),
-      allowNull: false
-    },
     pausedAt: {
       type: DataTypes.DATE,
-      allowNull: false,
       defaultValue: DataTypes.NOW
     },
-    resumeScheduledAt: {
+    pauseReason: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    resumeConditions: {
+      type: DataTypes.JSONB,
+      defaultValue: {}
+    },
+    scheduledResumeAt: {
       type: DataTypes.DATE,
       allowNull: true
     },
@@ -425,61 +409,41 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.DATE,
       allowNull: true
     },
-    pauseReason: {
-      type: DataTypes.STRING,
-      allowNull: true
-    },
     resumeReason: {
       type: DataTypes.STRING,
       allowNull: true
     },
-    pauseMetadata: {
+    isActive: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true
+    },
+    metadata: {
       type: DataTypes.JSONB,
       defaultValue: {}
-    },
-    // Track which journeys were affected
-    affectedJourneyIds: {
-      type: DataTypes.ARRAY(DataTypes.INTEGER),
-      defaultValue: []
-    },
-    // Resume conditions tracking
-    resumeConditionsCheck: {
-      type: DataTypes.JSONB,
-      defaultValue: {
-        lastStatusCheck: null,
-        lastTagCheck: null,
-        conditionsMet: false,
-        checkAttempts: 0
-      }
     }
   }, {
     tableName: 'LeadPauseStates',
     indexes: [
       {
-        fields: ['tenantId']
-      },
-      {
         fields: ['leadId']
       },
       {
-        fields: ['status']
+        fields: ['webhookEndpointId']
       },
       {
-        fields: ['resumeScheduledAt']
+        fields: ['isActive']
       },
       {
-        fields: ['tenantId', 'status']
+        fields: ['scheduledResumeAt']
+      },
+      {
+        fields: ['leadId', 'isActive']
       }
     ]
   });
 
-  // NEW: Track announcement analytics and metrics
+  // NEW: Announcement metrics tracking
   const AnnouncementMetric = sequelize.define('AnnouncementMetric', {
-    id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
-    },
     tenantId: {
       type: DataTypes.STRING,
       allowNull: false
@@ -500,7 +464,11 @@ module.exports = (sequelize, DataTypes) => {
         key: 'id'
       }
     },
-    // Content creator metrics
+    // Template and content tracking
+    templateId: {
+      type: DataTypes.UUID,
+      allowNull: true
+    },
     contentProjectId: {
       type: DataTypes.UUID,
       allowNull: true
@@ -509,24 +477,20 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.UUID,
       allowNull: true
     },
-    contentGenerationTime: {
-      type: DataTypes.INTEGER, // Milliseconds
+    // OptiSigns integration tracking
+    optisignsTakeoverId: {
+      type: DataTypes.UUID,
       allowNull: true
     },
-    // OptiSigns metrics
-    displayIds: {
-      type: DataTypes.ARRAY(DataTypes.STRING),
-      defaultValue: []
-    },
-    takeoverIds: {
-      type: DataTypes.ARRAY(DataTypes.UUID),
-      defaultValue: []
-    },
-    successfulDisplays: {
+    targetDisplayCount: {
       type: DataTypes.INTEGER,
       defaultValue: 0
     },
-    failedDisplays: {
+    successfulDisplayCount: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0
+    },
+    failedDisplayCount: {
       type: DataTypes.INTEGER,
       defaultValue: 0
     },
@@ -620,6 +584,220 @@ module.exports = (sequelize, DataTypes) => {
   AnnouncementMetric.belongsTo(WebhookEvent, {
     foreignKey: 'webhookEventId'
   });
+
+  // ===== STATIC METHODS FOR MIGRATION AND VALIDATION =====
+
+  /**
+   * Migrate existing announcement configs from projectId to templateId
+   * This should be run as a one-time migration
+   */
+  WebhookEndpoint.migrateAnnouncementConfigs = async function(sequelize) {
+    try {
+      console.log('🔄 Migrating announcement configurations from projectId to templateId...');
+      
+      const webhooks = await this.findAll({
+        where: {
+          webhookType: 'announcement',
+          announcementConfig: {
+            enabled: true
+          }
+        }
+      });
+      
+      let migratedCount = 0;
+      let errorCount = 0;
+      
+      for (const webhook of webhooks) {
+        try {
+          const config = webhook.announcementConfig;
+          
+          // Check if this webhook is using the old projectId format
+          if (config.contentCreator?.projectId && !config.contentCreator?.templateId) {
+            const projectId = config.contentCreator.projectId;
+            
+            // Try to find the template that was used to create this project
+            const project = await sequelize.models.ContentProject?.findByPk(projectId);
+            
+            if (project && project.templateId) {
+              // Update the configuration to use templateId
+              config.contentCreator.templateId = project.templateId;
+              config.contentCreator.templateName = project.template?.name || 'Migrated Template';
+              
+              // Remove the old projectId field
+              delete config.contentCreator.projectId;
+              
+              // Save the updated configuration
+              await webhook.update({
+                announcementConfig: config
+              });
+              
+              migratedCount++;
+              console.log(`✅ Migrated webhook "${webhook.name}" from project ${projectId} to template ${project.templateId}`);
+              
+            } else {
+              console.warn(`⚠️ Could not find template for project ${projectId} in webhook "${webhook.name}"`);
+              errorCount++;
+            }
+          }
+        } catch (error) {
+          console.error(`❌ Error migrating webhook "${webhook.name}":`, error.message);
+          errorCount++;
+        }
+      }
+      
+      console.log(`✅ Migration completed: ${migratedCount} migrated, ${errorCount} errors`);
+      return { migratedCount, errorCount };
+      
+    } catch (error) {
+      console.error('❌ Migration failed:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Validate announcement configuration
+   */
+  WebhookEndpoint.validateAnnouncementConfig = function(config) {
+    const errors = [];
+    
+    if (!config || typeof config !== 'object') {
+      errors.push('Announcement config must be an object');
+      return errors;
+    }
+    
+    // Validate content creator config
+    if (config.contentCreator) {
+      const cc = config.contentCreator;
+      
+      // Check for templateId (new required field)
+      if (!cc.templateId) {
+        errors.push('contentCreator.templateId is required');
+      }
+      
+      // Check for old projectId field
+      if (cc.projectId) {
+        errors.push('contentCreator.projectId is deprecated, use templateId instead');
+      }
+      
+      // Validate variable mapping
+      if (cc.variableMapping && typeof cc.variableMapping !== 'object') {
+        errors.push('contentCreator.variableMapping must be an object');
+      }
+      
+      // Validate default values
+      if (cc.defaultValues && typeof cc.defaultValues !== 'object') {
+        errors.push('contentCreator.defaultValues must be an object');
+      }
+    }
+    
+    // Validate OptiSigns config
+    if (config.optisigns) {
+      const os = config.optisigns;
+      
+      // Validate display selection
+      if (os.displaySelection) {
+        const validModes = ['all', 'specific', 'group', 'conditional'];
+        if (!validModes.includes(os.displaySelection.mode)) {
+          errors.push(`Invalid displaySelection.mode, must be one of: ${validModes.join(', ')}`);
+        }
+        
+        if (os.displaySelection.mode === 'specific' && (!os.displaySelection.displayIds || !Array.isArray(os.displaySelection.displayIds))) {
+          errors.push('displaySelection.displayIds must be an array when mode is "specific"');
+        }
+      }
+      
+      // Validate takeover config
+      if (os.takeover) {
+        const validPriorities = ['LOW', 'NORMAL', 'HIGH', 'EMERGENCY'];
+        if (os.takeover.priority && !validPriorities.includes(os.takeover.priority)) {
+          errors.push(`Invalid takeover.priority, must be one of: ${validPriorities.join(', ')}`);
+        }
+        
+        if (os.takeover.duration && (typeof os.takeover.duration !== 'number' || os.takeover.duration <= 0)) {
+          errors.push('takeover.duration must be a positive number');
+        }
+      }
+    }
+    
+    return errors;
+  };
+
+  /**
+   * Get default announcement configuration for templates
+   */
+  WebhookEndpoint.getDefaultAnnouncementConfig = function() {
+    return {
+      enabled: false,
+      contentCreator: {
+        templateId: null,
+        templateName: null,
+        generateNewContent: true,
+        variableMapping: {},
+        defaultValues: {},
+        projectSettings: {
+          name: "Webhook Announcement",
+          addTimestamp: true,
+          customNamePattern: null
+        }
+      },
+      optisigns: {
+        displaySelection: {
+          mode: 'all',
+          displayIds: [],
+          displayGroups: [],
+          conditionalSelection: {
+            enabled: false,
+            conditions: []
+          }
+        },
+        takeover: {
+          priority: 'NORMAL',
+          duration: 30,
+          restoreAfter: true,
+          interruptCurrent: true
+        },
+        scheduling: {
+          immediate: true,
+          delay: 0,
+          scheduledTime: null,
+          timezone: 'UTC'
+        }
+      },
+      advanced: {
+        triggerConditions: {
+          enabled: false,
+          timeRestrictions: {
+            enabled: false,
+            allowedHours: { start: 9, end: 17 },
+            allowedDays: [1, 2, 3, 4, 5],
+            timezone: 'UTC'
+          },
+          rateLimiting: {
+            enabled: false,
+            maxPerHour: 10,
+            maxPerDay: 50,
+            cooldownMinutes: 5
+          },
+          payloadConditions: {
+            enabled: false,
+            conditions: []
+          }
+        },
+        errorHandling: {
+          retryAttempts: 3,
+          retryDelay: 5,
+          fallbackTemplate: null,
+          notifyOnFailure: true
+        },
+        metrics: {
+          trackDisplayTime: true,
+          trackViewCount: true,
+          trackEngagement: false,
+          customMetrics: {}
+        }
+      }
+    };
+  };
 
   return {
     WebhookEndpoint,

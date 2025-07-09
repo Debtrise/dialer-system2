@@ -1,11 +1,10 @@
-// shared/webhook-service.js
-// Enhanced webhook service with content creation and OptiSigns integration
 
 const crypto = require('crypto');
 const { Op } = require('sequelize');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs').promises;
 const path = require('path');
+
 
 // Small 1x1 pixel placeholder used when no fallback photo is configured
 const DEFAULT_FALLBACK_PHOTO =
@@ -315,284 +314,1374 @@ class WebhookService {
     }
   }
 
-  /**
-   * Process announcement webhook with enhanced photo support and improved OptiSigns error handling
-   */
-  async processAnnouncementWebhook(webhookEndpoint, payload) {
-    const processingStartTime = Date.now();
-    const tenantId = webhookEndpoint.tenantId || 
-      (typeof webhookEndpoint.get === 'function' ? 
-        webhookEndpoint.get('tenantId') : 
-        webhookEndpoint.dataValues?.tenantId);
+ // shared/webhook-service.js - Backward compatible announcement processing
 
-    const announcementMetricData = {
-      tenantId: webhookEndpoint.tenantId,
-      webhookEndpointId: webhookEndpoint.id,
-      announcementStartTime: new Date(processingStartTime),
-      contentProjectId: null,
-      displayIds: [],
-      successfulDisplays: 0,
-      failedDisplays: 0,
-      variablesInjected: {},
-      variablesMissing: [],
-      errors: [],
-      optisignsErrors: [] // Track specific OptiSigns errors
-    };
-
+/**
+ * Process announcement webhook with backward compatibility for projectId
+ */
+async processAnnouncementWebhook(webhookEndpoint, payload, headers) {
+  const processingStartTime = Date.now();
+  const announcementConfig = webhookEndpoint.announcementConfig;
+  
+  // Initialize metrics tracking
+  const announcementMetricData = {
+    webhookEndpointId: webhookEndpoint.id,
+    processingStartTime,
+    variablesInjected: {},
+    variablesMissing: [],
+    templateId: null,
+    contentProjectId: null,
+    contentGenerationTime: null,
+    targetDisplayCount: 0,
+    optisignsExecutionTime: null,
+    errors: [],
+    warnings: []
+  };
+  
+  try {
+    console.log('🎯 Processing announcement webhook:', webhookEndpoint.name);
+    console.log('📋 Announcement config:', JSON.stringify(announcementConfig, null, 2));
+    
+    // Step 1: Check trigger conditions
+    const shouldTrigger = await this.checkAnnouncementTriggerConditions(
+      announcementConfig,
+      payload,
+      webhookEndpoint.tenantId
+    );
+    
+    if (!shouldTrigger) {
+      console.log('⏭️ Announcement trigger conditions not met, skipping');
+      return {
+        webhookType: 'announcement',
+        status: 'skipped',
+        reason: 'trigger_conditions_not_met',
+        announcementMetrics: announcementMetricData
+      };
+    }
+    
+    // Step 2: Extract variables from webhook payload WITH PHOTO SUPPORT
+    const extractedVariables = await this.extractAnnouncementVariablesWithPhoto(
+      announcementConfig.contentCreator,
+      payload,
+      webhookEndpoint.tenantId
+    );
+    
+    announcementMetricData.variablesInjected = extractedVariables.variables;
+    announcementMetricData.variablesMissing = extractedVariables.missing;
+    
+    console.log('📝 Extracted variables with photo:', extractedVariables.variables);
+    
+    // Step 3: Create content project - HANDLE BOTH OLD AND NEW FORMATS
+    let contentProject = null;
+    let contentExportId = null;
+    
     try {
-      console.log('🎉 Processing announcement webhook:', webhookEndpoint.name);
+      // Generate project name
+      let projectName = announcementConfig.contentCreator.projectSettings?.name || 
+                       announcementConfig.contentCreator.projectName || 
+                       'Webhook Announcement';
       
-      // Check if announcement is enabled
-      if (!webhookEndpoint.announcementConfig || !webhookEndpoint.announcementConfig.enabled) {
-        throw new Error('Announcement configuration is not enabled for this webhook');
-      }
-
-      // Check required services (OptiSigns is mandatory, content service optional)
-      if (!this.optisignsService) {
-        throw new Error('OptiSigns service is required for announcement webhooks');
-      }
-
-      const announcementConfig = webhookEndpoint.announcementConfig;
-      
-      // Step 1: Check trigger conditions
-      if (announcementConfig.advanced?.triggerConditions?.enabled) {
-        const conditionsPassed = await this.checkAnnouncementTriggerConditions(
-          announcementConfig.advanced.triggerConditions, 
-          payload
+      if (announcementConfig.contentCreator.projectSettings?.addTimestamp) {
+        projectName += ` - ${new Date().toISOString()}`;
+      } else if (announcementConfig.contentCreator.projectSettings?.customNamePattern) {
+        projectName = this.interpolateVariables(
+          announcementConfig.contentCreator.projectSettings.customNamePattern,
+          extractedVariables.variables
         );
-        if (!conditionsPassed) {
-          console.log('⏸️ Announcement skipped due to trigger conditions');
-          return {
-            success: true,
-            webhookType: 'announcement',
-            skipped: true,
-            reason: 'Trigger conditions not met',
-            announcementActions: {}
-          };
-        }
+      } else if (projectName.includes('{{timestamp}}')) {
+        // Handle old timestamp format
+        projectName = projectName.replace('{{timestamp}}', new Date().toISOString());
       }
 
-      // Step 2: Extract variables from webhook payload WITH PHOTO SUPPORT
-      const extractedVariables = await this.extractAnnouncementVariablesWithPhoto(
-        announcementConfig.contentCreator,
-        payload,
-        webhookEndpoint.tenantId
-      );
+      // BACKWARD COMPATIBILITY: Check for both new templateId and old projectId
+      const templateId = announcementConfig.contentCreator.templateId;
+      const projectId = announcementConfig.contentCreator.projectId;
       
-      announcementMetricData.variablesInjected = extractedVariables.variables;
-      announcementMetricData.variablesMissing = extractedVariables.missing;
-      
-      console.log('📝 Extracted variables with photo:', extractedVariables.variables);
-      
-      // Step 3: Create content project
-      let contentProject = null;
-      let contentExportId = null;
-      
-      try {
-        // Generate project name
-        let projectName = announcementConfig.contentCreator.projectSettings?.name || 'Webhook Announcement';
-        if (announcementConfig.contentCreator.projectSettings?.addTimestamp) {
-          projectName += ` - ${new Date().toISOString()}`;
-        } else if (announcementConfig.contentCreator.projectSettings?.customNamePattern) {
-          projectName = this.interpolateVariables(
-            announcementConfig.contentCreator.projectSettings.customNamePattern,
-            extractedVariables.variables
-          );
-        }
-
-        const baseProjectId = announcementConfig.contentCreator.projectId;
-
-        if (baseProjectId) {
-          contentProject = await this.duplicateProjectForTenant(
-            baseProjectId,
-            webhookEndpoint.tenantId,
-            projectName,
-            1
-          );
-        } else {
-          const projectData = {
-            name: projectName,
-            description: `Automatically generated from webhook: ${webhookEndpoint.name}`,
-            status: 'active',
-            metadata: {
-              source: 'webhook_announcement',
-              webhookEndpointId: webhookEndpoint.id,
-              variables: extractedVariables.variables
-            }
-          };
-
-          contentProject = await this.contentService.createProject(
-            webhookEndpoint.tenantId,
-            projectData,
-            1 // System user ID
+      if (templateId) {
+        console.log('✅ Using new template-based approach with templateId:', templateId);
+        // NEW APPROACH: Create project from template
+        announcementMetricData.templateId = templateId;
+        
+        contentProject = await this.createProjectFromTemplate(
+          templateId,
+          webhookEndpoint.tenantId,
+          projectName,
+          extractedVariables.variables,
+          {
+            source: 'webhook_announcement',
+            webhookEndpointId: webhookEndpoint.id,
+            variables: extractedVariables.variables
+          }
+        );
+        
+      } else if (projectId) {
+        console.log('⚠️ Using legacy project-based approach with projectId:', projectId);
+        console.log('💡 Consider migrating this webhook to use templateId instead');
+        
+        // LEGACY APPROACH: Duplicate existing project
+        contentProject = await this.duplicateProjectForTenant(
+          projectId,
+          webhookEndpoint.tenantId,
+          projectName,
+          1 // System user ID
+        );
+        
+        // Inject variables into the duplicated project
+        if (contentProject) {
+          await this.injectVariablesIntoProject(
+            contentProject.id,
+            extractedVariables.variables,
+            webhookEndpoint.tenantId
           );
         }
         
-        announcementMetricData.contentProjectId = contentProject.id;
-        console.log('✅ Created content project:', contentProject.id);
+      } else {
+        throw new Error('No templateId or projectId specified in announcement configuration. Please configure either contentCreator.templateId (recommended) or contentCreator.projectId (legacy).');
+      }
+      
+      announcementMetricData.contentProjectId = contentProject.id;
+      console.log('✅ Created content project:', contentProject.id);
+      
+    } catch (error) {
+      console.error('❌ Failed to create content project:', error);
+      announcementMetricData.errors.push({
+        stage: 'content_creation',
+        error: error.message
+      });
+      throw new Error(`Content creation failed: ${error.message}`);
+    }
 
-        // Inject variables into project elements (including photo)
-        await this.injectVariablesIntoProject(
-          contentProject.id,
-          extractedVariables.variables,
+    // Record content generation time
+    announcementMetricData.contentGenerationTime = Date.now() - processingStartTime;
+    
+    // Step 4: Determine target displays
+    console.log('🔍 Determining target displays for OptiSigns...');
+    
+    const targetDisplays = await this.getAnnouncementTargetDisplays(
+      webhookEndpoint.tenantId,
+      announcementConfig.optisigns?.displaySelection || { mode: 'all' },
+      payload
+    );
+    
+    console.log(`🎯 Found ${targetDisplays.length} target displays`);
+    announcementMetricData.targetDisplayCount = targetDisplays.length;
+    
+    if (targetDisplays.length === 0) {
+      console.log('⚠️ No target displays found, skipping OptiSigns execution');
+      announcementMetricData.warnings.push('No target displays found');
+      
+      return {
+        webhookType: 'announcement',
+        status: 'completed_partial',
+        contentProjectId: contentProject.id,
+        announcementMetrics: announcementMetricData,
+        warnings: ['No target displays found']
+      };
+    }
+    
+    // Step 5: Execute OptiSigns announcements
+    const optisignsStartTime = Date.now();
+    const announcements = [];
+    
+    for (const display of targetDisplays) {
+      try {
+        const announcement = await this.executeOptiSignsAnnouncement(
+          display,
+          contentProject,
+          announcementConfig.optisigns,
           webhookEndpoint.tenantId
         );
         
-        console.log('✅ Variables injected into project elements');
+        announcements.push({
+          displayId: display.id,
+          displayName: display.name,
+          announcementId: announcement.id,
+          status: 'success'
+        });
         
       } catch (error) {
-        console.error('❌ Failed to create content project:', error);
-        announcementMetricData.errors.push({
-          stage: 'content_creation',
+        console.error(`❌ Failed to execute announcement on display ${display.name}:`, error);
+        announcements.push({
+          displayId: display.id,
+          displayName: display.name,
+          status: 'failed',
           error: error.message
         });
-        throw new Error(`Content creation failed: ${error.message}`);
-      }
-
-      // Record content generation time
-      announcementMetricData.contentGenerationTime = Date.now() - processingStartTime;
-      
-      // Step 4: Determine target displays with enhanced debugging
-      console.log('🔍 Determining target displays for OptiSigns...');
-      console.log('📋 Display selection config:', JSON.stringify(announcementConfig.optisigns?.displaySelection, null, 2));
-      
-      const targetDisplays = await this.getAnnouncementTargetDisplays(
-        webhookEndpoint.tenantId,
-        announcementConfig.optisigns?.displaySelection || { mode: 'all' },
-        payload
-      );
-      
-      console.log(`🎯 Found ${targetDisplays.length} target displays:`, targetDisplays.map(d => ({
-        id: d.id,
-        name: d.name,
-        location: d.location,
-        isActive: d.isActive,
-        isOnline: d.isOnline,
-        optisignsDisplayId: d.optisignsDisplayId,
-        uuid: d.uuid
-      })));
-      
-      announcementMetricData.displayIds = targetDisplays.map(d => d.id);
-      
-      // Step 5: ENHANCED OptiSigns publishing with detailed error handling
-      if (targetDisplays.length > 0) {
-        try {
-          console.log('📦 Starting export generation for OptiSigns...');
-          
-          // Generate export
-          const exportOptions = {
-            format: 'html',
-            quality: 'high',
-            optimizeForDigitalSignage: true
-          };
-          
-          const exportInfo = await this.contentService.generateProjectExport(
-            contentProject.id,
-            webhookEndpoint.tenantId,
-            exportOptions
-          );
-          contentExportId = exportInfo.exportId;
-
-          console.log('✅ Generated content export successfully');
-          console.log('📦 Export info:', {
-            exportId: exportInfo.exportId,
-            publicUrl: exportInfo.publicUrl,
-            format: exportInfo.format
-          });
-          
-          // ENHANCED OptiSigns publishing with better error handling
-          const publishResult = await this.publishToOptisignsWithRetry(
-            contentProject,
-            exportInfo,
-            targetDisplays,
-            announcementConfig.optisigns,
-            webhookEndpoint.tenantId,
-            announcementMetricData
-          );
-          
-          announcementMetricData.successfulDisplays = publishResult.successCount;
-          announcementMetricData.failedDisplays = publishResult.failedCount;
-          announcementMetricData.optisignsErrors = publishResult.errors;
-          
-          console.log('🎯 OptiSigns publishing completed!');
-          console.log('📊 Final Results:', {
-            successful: publishResult.successCount,
-            failed: publishResult.failedCount,
-            total: targetDisplays.length,
-            errors: publishResult.errors
-          });
-          
-        } catch (error) {
-          console.error('❌ Failed to publish to OptiSigns displays:', error);
-          announcementMetricData.failedDisplays = targetDisplays.length;
-          announcementMetricData.errors.push({
-            stage: 'optisigns_publishing',
-            error: error.message,
-            stack: error.stack
-          });
-          announcementMetricData.optisignsErrors.push({
-            error: error.message,
-            stage: 'export_or_setup'
-          });
-          console.log('⚠️ Continuing with partial success (content created but not published to displays)');
-        }
-      } else {
-        console.log('⚠️ No target displays found for OptiSigns publishing');
-        
-        // Enhanced debugging for display selection
-        await this.debugDisplaySelection(webhookEndpoint.tenantId, announcementConfig.optisigns?.displaySelection);
         
         announcementMetricData.errors.push({
-          stage: 'display_selection',
-          error: 'No target displays found'
+          stage: 'optisigns_execution',
+          displayId: display.id,
+          error: error.message
         });
       }
-      
-      // Step 6: Record metrics
-      announcementMetricData.announcementEndTime = new Date();
-      announcementMetricData.processingTime = Date.now() - processingStartTime;
-      announcementMetricData.totalDuration = Math.round(
-        (announcementMetricData.announcementEndTime -
-          announcementMetricData.announcementStartTime) /
-          1000
-      );
-      await this.recordAnnouncementMetrics(announcementMetricData);
-      
-      return {
-        success: true,
-        webhookType: 'announcement',
-        announcementActions: {
-          contentProjectId: contentProject?.id,
-          contentExportId,
-          targetDisplays: targetDisplays.length,
-          successfulDisplays: announcementMetricData.successfulDisplays,
-          failedDisplays: announcementMetricData.failedDisplays,
-          variablesInjected: Object.keys(extractedVariables.variables).length,
-          processingTime: Date.now() - processingStartTime,
-          optisignsErrors: announcementMetricData.optisignsErrors
+    }
+    
+    announcementMetricData.optisignsExecutionTime = Date.now() - optisignsStartTime;
+    
+    // Step 6: Return results
+    const successfulAnnouncements = announcements.filter(a => a.status === 'success');
+    const failedAnnouncements = announcements.filter(a => a.status === 'failed');
+    
+    console.log(`✅ Announcement webhook completed: ${successfulAnnouncements.length} success, ${failedAnnouncements.length} failed`);
+    
+    return {
+      webhookType: 'announcement',
+      status: failedAnnouncements.length === 0 ? 'completed' : 'completed_partial',
+      contentProjectId: contentProject.id,
+      templateId: announcementMetricData.templateId,
+      projectId: announcementConfig.contentCreator.projectId, // Include for legacy tracking
+      announcements: announcements,
+      announcementMetrics: announcementMetricData,
+      processingTime: Date.now() - processingStartTime
+    };
+    
+  } catch (error) {
+    console.error('❌ Announcement webhook processing failed:', error);
+    
+    announcementMetricData.errors.push({
+      stage: 'general',
+      error: error.message
+    });
+    
+    return {
+      webhookType: 'announcement',
+      status: 'failed',
+      error: error.message,
+      announcementMetrics: announcementMetricData,
+      processingTime: Date.now() - processingStartTime
+    };
+  }
+}
+/**
+ * Get target displays for announcement based on selection criteria
+ */
+async getAnnouncementTargetDisplays(tenantId, displaySelection, payload) {
+  try {
+    console.log('🔍 Getting target displays for announcement...', {
+      mode: displaySelection.mode,
+      tenantId
+    });
+
+    if (!this.optisignsService) {
+      console.warn('⚠️ OptiSigns service not available');
+      return [];
+    }
+
+    let displays = [];
+
+    switch (displaySelection.mode) {
+      case 'all':
+        // Get all active displays for tenant
+        displays = await this.models.OptisignsDisplay?.findAll({
+          where: {
+            tenantId: tenantId,
+            isActive: true
+          }
+        }) || [];
+        break;
+
+      case 'specific':
+        // Get specific displays by IDs
+        if (displaySelection.displayIds && displaySelection.displayIds.length > 0) {
+          displays = await this.models.OptisignsDisplay?.findAll({
+            where: {
+              id: displaySelection.displayIds,
+              tenantId: tenantId,
+              isActive: true
+            }
+          }) || [];
+        }
+        break;
+
+      case 'group':
+        // Get displays by group/tag
+        if (displaySelection.displayGroups && displaySelection.displayGroups.length > 0) {
+          displays = await this.models.OptisignsDisplay?.findAll({
+            where: {
+              tenantId: tenantId,
+              isActive: true,
+              tags: {
+                [this.models.Sequelize.Op.overlap]: displaySelection.displayGroups
+              }
+            }
+          }) || [];
+        }
+        break;
+
+      case 'conditional':
+        // Get displays based on conditional logic (payload-based)
+        displays = await this.getConditionalDisplays(
+          tenantId, 
+          displaySelection.conditionalSelection, 
+          payload
+        );
+        break;
+
+      default:
+        console.warn(`⚠️ Unknown display selection mode: ${displaySelection.mode}`);
+        displays = [];
+    }
+
+    console.log(`📊 Found ${displays.length} target displays`);
+    return displays;
+
+  } catch (error) {
+    console.error('❌ Error getting target displays:', error);
+    return [];
+  }
+}
+
+
+/**
+   * Execute OptiSigns announcement on a specific display
+   * UPDATED: Uses proper export URL from created project
+   */
+  async executeOptiSignsAnnouncement(display, contentProject, optisignsConfig, tenantId) {
+    try {
+      console.log(`🚀 Executing OptiSigns announcement on display: ${display.name} (${display.id})`);
+
+      if (!this.optisignsService) {
+        throw new Error('OptiSigns service not available');
+      }
+
+      if (!contentProject) {
+        throw new Error('Content project is required for announcement');
+      }
+
+      // Get the content project URL for OptiSigns
+      let exportData;
+      try {
+        console.log('📤 Preparing content for OptiSigns...');
+        
+        // Check if project already has an export URL (from createProjectFromTemplate)
+        if (contentProject.publicUrl && contentProject.exportId) {
+          console.log(`✅ Using existing export URL: ${contentProject.publicUrl}`);
+          exportData = {
+            publicUrl: contentProject.publicUrl,
+            url: contentProject.publicUrl,
+            type: 'webhook_generated',
+            format: 'html',
+            projectId: contentProject.id,
+            projectName: contentProject.name,
+            exportId: contentProject.exportId,
+            exportedAt: new Date().toISOString()
+          };
+        } else {
+          // Fallback: Try to use export method if available
+          if (this.contentService.exportProject) {
+            console.log('📤 Generating new export...');
+            exportData = await this.contentService.exportProject(
+              contentProject.id, 
+              tenantId, 
+              'optisigns'
+            );
+          } else {
+            // Final fallback: Use project preview URL
+            console.log('📋 Using project preview URL as fallback');
+            const baseUrl = process.env.BASE_URL || 'http://34.122.156.88:3001';
+            exportData = {
+              publicUrl: `${baseUrl}/api/content/projects/${contentProject.id}/preview`,
+              url: `${baseUrl}/api/content/projects/${contentProject.id}/preview`,
+              type: 'project_preview',
+              format: 'html',
+              projectId: contentProject.id,
+              projectName: contentProject.name,
+              exportedAt: new Date().toISOString()
+            };
+          }
+        }
+        
+        console.log('📋 Using export data:', {
+          url: exportData.publicUrl || exportData.url,
+          type: exportData.type,
+          exportId: exportData.exportId
+        });
+        
+      } catch (exportError) {
+        console.error('❌ Content export failed, using fallback:', exportError);
+        
+        // Final fallback
+        const baseUrl = process.env.BASE_URL || 'http://34.122.156.88:3001';
+        exportData = {
+          publicUrl: `${baseUrl}/api/content/projects/${contentProject.id}/preview`,
+          url: `${baseUrl}/api/content/projects/${contentProject.id}/preview`,
+          type: 'fallback',
+          format: 'html',
+          projectId: contentProject.id
+        };
+      }
+
+      // Prepare takeover configuration
+      const takeoverConfig = {
+        displayId: display.id,
+        priority: optisignsConfig.takeover?.priority || 'NORMAL',
+        duration: optisignsConfig.takeover?.duration || 30,
+        restoreAfter: optisignsConfig.takeover?.restoreAfter !== false,
+        interruptCurrent: optisignsConfig.takeover?.interruptCurrent !== false,
+        contentType: 'PROJECT',
+        contentId: contentProject.id,
+        contentUrl: exportData.publicUrl || exportData.url,
+        metadata: {
+          source: 'webhook_announcement',
+          projectId: contentProject.id,
+          projectName: contentProject.name,
+          exportId: exportData.exportId,
+          executedAt: new Date().toISOString()
         }
       };
-      
-    } catch (error) {
-      console.error('❌ Announcement webhook processing failed:', error);
-      
-      // Record failed metrics
-      announcementMetricData.errors.push({
-        stage: 'general',
-        error: error.message
+
+      console.log('🎯 Executing takeover with config:', {
+        displayId: display.id,
+        displayName: display.name,
+        priority: takeoverConfig.priority,
+        duration: takeoverConfig.duration,
+        contentUrl: takeoverConfig.contentUrl
       });
-      announcementMetricData.announcementEndTime = new Date();
-      announcementMetricData.processingTime = Date.now() - processingStartTime;
-      announcementMetricData.totalDuration = Math.round(
-        (announcementMetricData.announcementEndTime -
-          announcementMetricData.announcementStartTime) /
-          1000
-      );
-      await this.recordAnnouncementMetrics(announcementMetricData);
-      
+
+      // Execute the takeover through OptiSigns service
+      let takeover;
+      try {
+        console.log('🚀 Preparing content for OptiSigns takeover...');
+        
+        // First, we need to upload the content as an asset to OptiSigns
+        let optisignsAssetId;
+        try {
+          console.log('📤 Uploading content to OptiSigns as asset...');
+          
+          // Try to upload the HTML content as a website asset
+const uploadResult = await this.optisignsService.createWebsiteAsset(
+  tenantId,
+  exportData.publicUrl || exportData.url,
+  `Webhook Announcement - ${contentProject.name}`,
+  null // teamId - let service use default
+);
+          
+optisignsAssetId = uploadResult.optisignsId || uploadResult.id;
+          console.log(`✅ Content uploaded to OptiSigns as asset: ${optisignsAssetId}`);
+          
+        } catch (uploadError) {
+          console.error('❌ Failed to upload content to OptiSigns:', uploadError.message);
+          
+          // Fallback: Try to find an existing asset or use a placeholder
+          console.log('🔄 Trying fallback approach...');
+          
+          // Check if there's a default announcement asset we can use
+          try {
+            const displays = await this.models.OptisignsDisplay?.findAll({
+              where: { tenantId: tenantId },
+              limit: 1
+            });
+            
+            if (displays && displays.length > 0 && displays[0].currentAssetId) {
+              console.log('📋 Using existing asset as fallback');
+              optisignsAssetId = displays[0].currentAssetId;
+            } else {
+              throw new Error('No fallback asset available');
+            }
+          } catch (fallbackError) {
+            throw new Error(`Content upload failed and no fallback available: ${uploadError.message}`);
+          }
+        }
+        
+        if (optisignsConfig.scheduling?.immediate !== false) {
+          // Immediate execution using the correct method name
+          console.log(`🎯 Executing immediate takeover with asset: ${optisignsAssetId}`);
+          
+          takeover = await this.optisignsService.takeoverDevice(
+            tenantId,
+            display.id,
+            'ASSET', // Content type for announcements
+            optisignsAssetId, // Use the OptiSigns asset ID
+            {
+              priority: takeoverConfig.priority,
+              duration: takeoverConfig.duration,
+              message: `Webhook announcement: ${contentProject.name}`,
+              restoreAfter: takeoverConfig.restoreAfter,
+              initiatedBy: 'webhook_system',
+              metadata: {
+                ...takeoverConfig.metadata,
+                optisignsAssetId,
+                originalProjectId: contentProject.id
+              }
+            }
+          );
+          
+          // Extract takeover info from result
+          takeover = takeover.takeover || takeover;
+          
+        } else {
+          // For scheduled execution, we'll need to implement scheduling
+          console.log('⏰ Scheduled takeovers not yet implemented, executing immediately');
+          
+          takeover = await this.optisignsService.takeoverDevice(
+            tenantId,
+            display.id,
+            'ASSET',
+            optisignsAssetId,
+            {
+              priority: takeoverConfig.priority,
+              duration: takeoverConfig.duration,
+              message: `Scheduled webhook announcement: ${contentProject.name}`,
+              restoreAfter: takeoverConfig.restoreAfter,
+              initiatedBy: 'webhook_system_scheduled',
+              metadata: {
+                ...takeoverConfig.metadata,
+                optisignsAssetId,
+                originalProjectId: contentProject.id
+              }
+            }
+          );
+          
+          takeover = takeover.takeover || takeover;
+        }
+      } catch (optisignsError) {
+        console.error('❌ OptiSigns takeover failed:', optisignsError);
+        throw new Error(`OptiSigns execution failed: ${optisignsError.message}`);
+      }
+
+      console.log(`✅ OptiSigns announcement executed successfully:`, {
+        takeoverId: takeover.id,
+        displayId: display.id,
+        displayName: display.name,
+        status: takeover.status
+      });
+
+      return {
+        id: takeover.id,
+        displayId: display.id,
+        displayName: display.name,
+        status: 'success',
+        takeoverConfig,
+        executedAt: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error(`❌ Failed to execute OptiSigns announcement on ${display.name}:`, error);
       throw error;
     }
   }
+  
+
+
+/**
+ * Get displays based on conditional selection criteria
+ */
+async getConditionalDisplays(tenantId, conditionalSelection, payload) {
+  try {
+    if (!conditionalSelection.enabled || !conditionalSelection.conditions) {
+      return [];
+    }
+
+    // Start with all active displays
+    let displays = await this.models.OptisignsDisplay?.findAll({
+      where: {
+        tenantId: tenantId,
+        isActive: true
+      }
+    }) || [];
+
+    // Filter displays based on conditions
+    for (const condition of conditionalSelection.conditions) {
+      const payloadValue = this.getNestedValue(payload, condition.field);
+      
+      displays = displays.filter(display => {
+        // Check if display matches the condition
+        // This could be extended to check display metadata, location, etc.
+        const displayValue = this.getNestedValue(display.metadata || {}, condition.field);
+        return this.evaluateCondition(displayValue || payloadValue, condition.operator, condition.value);
+      });
+    }
+
+    return displays;
+
+  } catch (error) {
+    console.error('❌ Error in conditional display selection:', error);
+    return [];
+  }
+}
+
+ 
+/**
+ * Check announcement trigger conditions
+ */
+async checkAnnouncementTriggerConditions(announcementConfig, payload, tenantId) {
+  try {
+    const triggerConditions = announcementConfig.advanced?.triggerConditions;
+    
+    if (!triggerConditions?.enabled) {
+      console.log('✅ Trigger conditions disabled, allowing announcement');
+      return true;
+    }
+
+    console.log('🔍 Checking announcement trigger conditions...');
+
+    // Time-based restrictions
+    if (triggerConditions.timeRestrictions?.enabled) {
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+
+      const allowedHours = triggerConditions.timeRestrictions.allowedHours;
+      const allowedDays = triggerConditions.timeRestrictions.allowedDays || [0,1,2,3,4,5,6];
+
+      if (allowedHours && (currentHour < allowedHours.start || currentHour >= allowedHours.end)) {
+        console.log(`⏰ Time restriction: Current hour ${currentHour} not in allowed range ${allowedHours.start}-${allowedHours.end}`);
+        return false;
+      }
+
+      if (!allowedDays.includes(currentDay)) {
+        console.log(`📅 Day restriction: Current day ${currentDay} not in allowed days ${allowedDays}`);
+        return false;
+      }
+    }
+
+    // Rate limiting
+    if (triggerConditions.rateLimiting?.enabled) {
+      const rateLimiting = triggerConditions.rateLimiting;
+      const now = new Date();
+      
+      // Check recent announcements
+      const recentAnnouncements = await this.models.AnnouncementMetric?.count({
+        where: {
+          tenantId: tenantId,
+          announcementStartTime: {
+            [this.models.Sequelize.Op.gte]: new Date(now.getTime() - (rateLimiting.cooldownMinutes || 5) * 60 * 1000)
+          }
+        }
+      }) || 0;
+
+      if (recentAnnouncements > 0) {
+        console.log(`⏱️ Rate limit: Last announcement was too recent`);
+        return false;
+      }
+    }
+
+    // Payload conditions
+    if (triggerConditions.payloadConditions?.enabled) {
+      for (const condition of triggerConditions.payloadConditions.conditions) {
+        const fieldValue = this.getNestedValue(payload, condition.field);
+        if (!this.evaluateCondition(fieldValue, condition.operator, condition.value)) {
+          console.log(`❌ Payload condition failed: ${condition.field} ${condition.operator} ${condition.value}`);
+          return false;
+        }
+      }
+    }
+
+    console.log('✅ All trigger conditions passed');
+    return true;
+
+  } catch (error) {
+    console.error('❌ Error checking trigger conditions:', error);
+    // Default to allowing announcement if check fails
+    return true;
+  }
+}
+
+/**
+ * Evaluate a condition (used for trigger conditions and display selection)
+ */
+evaluateCondition(value, operator, expectedValue) {
+  switch (operator) {
+    case 'equals':
+      return value == expectedValue;
+    case 'not_equals':
+      return value != expectedValue;
+    case 'contains':
+      return String(value || '').toLowerCase().includes(String(expectedValue || '').toLowerCase());
+    case 'not_contains':
+      return !String(value || '').toLowerCase().includes(String(expectedValue || '').toLowerCase());
+    case 'starts_with':
+      return String(value || '').toLowerCase().startsWith(String(expectedValue || '').toLowerCase());
+    case 'ends_with':
+      return String(value || '').toLowerCase().endsWith(String(expectedValue || '').toLowerCase());
+    case 'greater_than':
+      return parseFloat(value) > parseFloat(expectedValue);
+    case 'less_than':
+      return parseFloat(value) < parseFloat(expectedValue);
+    case 'greater_equal':
+      return parseFloat(value) >= parseFloat(expectedValue);
+    case 'less_equal':
+      return parseFloat(value) <= parseFloat(expectedValue);
+    case 'exists':
+      return value !== null && value !== undefined && value !== '';
+    case 'not_exists':
+      return value === null || value === undefined || value === '';
+    case 'regex':
+      try {
+        const regex = new RegExp(expectedValue);
+        return regex.test(String(value || ''));
+      } catch (error) {
+        console.warn('Invalid regex pattern:', expectedValue);
+        return false;
+      }
+    case 'in_array':
+      const expectedArray = Array.isArray(expectedValue) ? expectedValue : [expectedValue];
+      return expectedArray.includes(value);
+    case 'not_in_array':
+      const notExpectedArray = Array.isArray(expectedValue) ? expectedValue : [expectedValue];
+      return !notExpectedArray.includes(value);
+    default:
+      console.warn(`Unknown operator: ${operator}`);
+      return false;
+  }
+}
+
+
+
+/**
+ * Duplicate existing project for tenant (legacy support)
+ */
+async duplicateProjectForTenant(sourceProjectId, tenantId, newProjectName, userId) {
+  try {
+    console.log(`🔄 Duplicating project ${sourceProjectId} for tenant ${tenantId}`);
+    
+    // Get the source project with all its elements
+    const sourceProject = await this.contentService.getProjectWithElements(sourceProjectId, tenantId);
+    
+    if (!sourceProject) {
+      throw new Error(`Source project ${sourceProjectId} not found or not accessible for tenant ${tenantId}`);
+    }
+    
+    // Create new project based on source
+    const newProjectData = {
+      name: newProjectName,
+      description: `Duplicated from: ${sourceProject.name}`,
+      templateId: sourceProject.templateId,
+      canvasSize: sourceProject.canvasSize,
+      responsiveBreakpoints: sourceProject.responsiveBreakpoints,
+      canvasBackground: sourceProject.canvasBackground,
+      projectData: sourceProject.projectData,
+      variables: sourceProject.variables,
+      globalStyles: sourceProject.globalStyles,
+      interactions: sourceProject.interactions,
+      status: 'active',
+      metadata: {
+        source: 'webhook_duplication',
+        sourceProjectId: sourceProjectId,
+        duplicatedAt: new Date().toISOString()
+      }
+    };
+    
+    const newProject = await this.contentService.createProject(tenantId, newProjectData, userId);
+    
+    // Copy all elements from source project
+    if (sourceProject.elements && sourceProject.elements.length > 0) {
+      for (const element of sourceProject.elements) {
+        const elementData = {
+          elementType: element.elementType,
+          name: element.name,
+          position: element.position,
+          size: element.size,
+          properties: element.properties,
+          styles: element.styles,
+          layerOrder: element.layerOrder,
+          isLocked: element.isLocked,
+          isVisible: element.isVisible,
+          animations: element.animations,
+          interactions: element.interactions,
+          conditions: element.conditions,
+          assetId: element.assetId
+        };
+        
+        await this.contentService.createElement(newProject.id, elementData, tenantId);
+      }
+    }
+    
+    console.log(`✅ Successfully duplicated project to: ${newProject.id}`);
+    return newProject;
+    
+  } catch (error) {
+    console.error('Error duplicating project:', error);
+    throw new Error(`Failed to duplicate project: ${error.message}`);
+  }
+}
+
+
+
+
+/**
+   * Create a new project from a template with variable injection
+   * UPDATED: Now creates export record for public API access
+   */
+  async createProjectFromTemplate(templateId, tenantId, projectName, variables, metadata = {}) {
+    try {
+      // Get the template
+      const template = await this.contentService.getTemplate(templateId, tenantId);
+      if (!template) {
+        throw new Error(`Template not found: ${templateId}`);
+      }
+      
+      console.log(`📋 Creating project from template: ${template.name}`);
+      
+      // Create project data from template
+      const projectData = {
+        name: projectName,
+        description: `Auto-generated from template: ${template.name}`,
+        templateId: template.id,
+        canvasSize: template.canvasSize,
+        responsiveBreakpoints: template.responsiveBreakpoints,
+        status: 'active',
+        metadata: {
+          ...metadata,
+          sourceTemplate: template.name,
+          createdFromTemplate: true,
+          templateVersion: template.updatedAt
+        },
+        variables: template.variables || {}
+      };
+      
+      // Create the project
+      const project = await this.contentService.createProject(
+        tenantId,
+        projectData,
+        1 // System user ID
+      );
+      
+      console.log(`✅ Created project "${project.name}" from template`);
+      
+      // Copy elements from template and inject variables
+      if (template.templateData && typeof template.templateData === 'object') {
+        console.log('📋 Template data structure:', JSON.stringify(template.templateData, null, 2));
+        await this.copyTemplateElementsWithVariables(
+          project.id,
+          template.templateData,
+          variables,
+          tenantId
+        );
+      } else {
+        console.log('⚠️ No template data found or template data is not an object');
+        console.log('📋 Template structure:', {
+          hasTemplateData: !!template.templateData,
+          templateDataType: typeof template.templateData,
+          templateKeys: Object.keys(template)
+        });
+      }
+      
+      // IMPORTANT: Create export record for public API access
+      console.log('📤 Creating export record for public API access...');
+      
+      const { v4: uuidv4 } = require('uuid');
+      const exportId = uuidv4();
+      const baseUrl = process.env.BASE_URL || 'http://34.122.156.88:3001';
+      const publicUrl = `${baseUrl}/api/content/public/${exportId}`;
+      
+      try {
+        const exportRecord = await this.contentService.models.ContentExport.create({
+          id: exportId,
+          projectId: project.id,
+          tenantId: tenantId.toString(),
+          exportType: 'preview', // FIXED: Use valid enum value
+          format: 'html',
+          quality: 'high',
+          resolution: project.canvasSize || { width: 1920, height: 1080 },
+          publicUrl: publicUrl,
+          processingStatus: 'completed',
+          variableData: variables || {},
+          exportSettings: {
+            publicServing: true,
+            webhookGenerated: true,
+            selfContained: true,
+            generatedAt: new Date().toISOString()
+          },
+          createdBy: 1 // System user
+        });
+        
+        console.log(`✅ Created export record: ${exportId}`);
+        console.log(`🌐 Public URL: ${publicUrl}`);
+        
+        // Add export info to project metadata
+        project.exportId = exportId;
+        project.publicUrl = publicUrl;
+        
+      } catch (exportError) {
+        console.error('❌ Failed to create export record:', exportError.message);
+        console.log('⚠️ Project created but public API access may not work');
+      }
+      
+      return project;
+      
+    } catch (error) {
+      console.error('Error creating project from template:', error);
+      throw new Error(`Failed to create project from template: ${error.message}`);
+    }
+  }
+
+/**
+ * Copy template elements to project with variable injection
+ */
+
+async injectVariablesIntoProject(projectId, variables, tenantId = null) {
+    try {
+      // Get project with elements
+      const project = await this.contentService.getProjectWithElements(
+        projectId,
+        tenantId // Pass through tenant for proper lookup
+      );
+      
+      if (!project || !project.elements) {
+        return;
+      }
+
+      // Update each element with variable interpolation
+      for (const element of project.elements) {
+        const updatedProperties = {};
+        let hasChanges = false;
+        
+        // Special handling for text elements - THIS IS THE KEY FIX
+        if (element.elementType === 'text' || 
+            element.elementType === 'gradient_text' || 
+            element.elementType === 'shadow_text' || 
+            element.elementType === 'outline_text' || 
+            element.elementType === 'typewriter_text') {
+          
+          // Check for text content in multiple possible property names
+          const textProperties = ['text', 'content', 'innerHTML', 'textContent'];
+          
+          for (const textProp of textProperties) {
+            if (element.properties[textProp] && typeof element.properties[textProp] === 'string') {
+              const interpolatedText = this.interpolateVariables(element.properties[textProp], variables);
+              if (interpolatedText !== element.properties[textProp]) {
+                updatedProperties[textProp] = interpolatedText;
+                hasChanges = true;
+                console.log(`📝 Updated ${element.elementType} ${textProp}:`, {
+                  original: element.properties[textProp],
+                  interpolated: interpolatedText
+                });
+              }
+            }
+          }
+        }
+        
+        // Check all other properties for variable placeholders
+        if (element.properties) {
+          for (const [key, value] of Object.entries(element.properties)) {
+            // Skip text properties as they're handled above
+            if (element.elementType === 'text' && ['text', 'content', 'innerHTML', 'textContent'].includes(key)) {
+              continue;
+            }
+            
+            if (typeof value === 'string' && value.includes('{')) {
+              updatedProperties[key] = this.interpolateVariables(value, variables);
+              hasChanges = true;
+            }
+          }
+
+          // Special handling for image or sales rep photo elements
+          if ((element.elementType === 'image' || element.elementType === 'sales_rep_photo') && element.properties.src) {
+            // Check if src contains a variable placeholder for photo
+            if (element.properties.src.includes('{rep_photo}') && variables.rep_photo) {
+              updatedProperties.src = variables.rep_photo;
+              hasChanges = true;
+            } else if (element.properties.src.includes('{rep_photo_id}') && variables.rep_photo_id) {
+              // Link to asset ID
+              updatedProperties.assetId = variables.rep_photo_id;
+              hasChanges = true;
+            }
+          }
+        }
+        
+        // Update element if changes were made
+        if (hasChanges) {
+          await element.update({
+            properties: {
+              ...element.properties,
+              ...updatedProperties
+            }
+          });
+          console.log(`✅ Updated element ${element.id} (${element.elementType}) with variables`);
+        }
+      }
+      
+      console.log('✅ Variables injected into project elements');
+      
+    } catch (error) {
+      console.error('Error injecting variables:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Copy template elements and inject variables during creation (ENHANCED FOR TEXT)
+   */
+  async copyTemplateElementsWithVariables(templateId, targetProjectId, variables, tenantId) {
+    try {
+      console.log(`📋 Copying template elements from ${templateId} to ${targetProjectId} with variables`);
+      
+      // Get template elements
+      const template = await this.contentService.getProjectWithElements(templateId, tenantId);
+      
+      if (!template || !template.elements || template.elements.length === 0) {
+        console.log('⚠️ No template elements found to copy');
+        return;
+      }
+      
+      let createdCount = 0;
+      
+      for (const element of template.elements) {
+        try {
+          // Clone element data
+          const elementClone = JSON.parse(JSON.stringify(element.toJSON()));
+          
+          // Inject variables into properties BEFORE creating the element
+          if (elementClone.properties) {
+            // Special handling for text elements - ENHANCED FIX
+            if (elementClone.elementType === 'text' || 
+                elementClone.elementType === 'gradient_text' || 
+                elementClone.elementType === 'shadow_text' || 
+                elementClone.elementType === 'outline_text' || 
+                elementClone.elementType === 'typewriter_text') {
+              
+              // Handle multiple text property names
+              const textProperties = ['text', 'content', 'innerHTML', 'textContent'];
+              
+              for (const textProp of textProperties) {
+                if (elementClone.properties[textProp] && typeof elementClone.properties[textProp] === 'string') {
+                  elementClone.properties[textProp] = this.interpolateVariables(
+                    elementClone.properties[textProp], 
+                    variables
+                  );
+                  console.log(`📝 Injected variables into ${elementClone.elementType} ${textProp}:`, 
+                    elementClone.properties[textProp]);
+                }
+              }
+            }
+            
+            // Handle all other properties
+            for (const [key, value] of Object.entries(elementClone.properties)) {
+              if (typeof value === 'string' && value.includes('{')) {
+                // Skip text properties for text elements as they're handled above
+                if ((elementClone.elementType === 'text' || 
+                     elementClone.elementType === 'gradient_text' || 
+                     elementClone.elementType === 'shadow_text' || 
+                     elementClone.elementType === 'outline_text' || 
+                     elementClone.elementType === 'typewriter_text') && 
+                    ['text', 'content', 'innerHTML', 'textContent'].includes(key)) {
+                  continue;
+                }
+                
+                elementClone.properties[key] = this.interpolateVariables(value, variables);
+              }
+            }
+            
+            // Recursively inject variables into nested objects
+            elementClone.properties = this.injectVariablesIntoObject(elementClone.properties, variables);
+          }
+          
+          // Create element with injected variables
+          const elementToCreate = {
+            projectId: targetProjectId,
+            elementType: elementClone.elementType,
+            position: elementClone.position || { x: 0, y: 0 },
+            size: elementClone.size || { width: 100, height: 100 },
+            rotation: elementClone.rotation || 0,
+            scale: elementClone.scale || { x: 1, y: 1 },
+            skew: elementClone.skew || { x: 0, y: 0 },
+            opacity: elementClone.opacity !== undefined ? elementClone.opacity : 1,
+            properties: elementClone.properties || {},
+            styles: elementClone.styles || {},
+            responsiveStyles: elementClone.responsiveStyles || {},
+            animations: elementClone.animations || [],
+            interactions: elementClone.interactions || [],
+            variables: elementClone.variables || {},
+            conditions: elementClone.conditions || {},
+            constraints: elementClone.constraints || {},
+            isLocked: elementClone.isLocked || false,
+            isVisible: elementClone.isVisible !== undefined ? elementClone.isVisible : true,
+            isInteractive: elementClone.isInteractive || false,
+            layerOrder: elementClone.layerOrder || (createdCount + 1),
+            groupId: elementClone.groupId || null,
+            parentId: elementClone.parentId || null,
+            assetId: elementClone.assetId || null,
+            linkedElements: elementClone.linkedElements || [],
+            customCSS: elementClone.customCSS || null,
+            customJS: elementClone.customJS || null
+          };
+          
+          // Create the element in the database
+          const createdElement = await this.contentService.models.ContentElement.create(elementToCreate);
+          createdCount++;
+          
+          console.log(`✅ Created element ${createdElement.id}: ${createdElement.elementType}`);
+          
+        } catch (elementError) {
+          console.error(`❌ Error creating element:`, elementError);
+          console.error(`Element data:`, elementData);
+        }
+      }
+      
+      console.log(`✅ Copied ${createdCount} template elements with variables injected`);
+      
+    } catch (error) {
+      console.error('Error copying template elements:', error);
+      throw new Error(`Failed to copy template elements: ${error.message}`);
+    }
+  }
+
+  /**
+   * Recursively inject variables into an object (ENHANCED)
+   */
+  injectVariablesIntoObject(obj, variables) {
+    if (typeof obj === 'string') {
+      return this.interpolateVariables(obj, variables);
+    }
+    
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.injectVariablesIntoObject(item, variables));
+    }
+    
+    if (obj && typeof obj === 'object') {
+      const result = {};
+      for (const [key, value] of Object.entries(obj)) {
+        result[key] = this.injectVariablesIntoObject(value, variables);
+      }
+      return result;
+    }
+    
+    return obj;
+  }
+
+  /**
+   * Interpolate variables in a string (ENHANCED WITH BETTER ERROR HANDLING)
+   */
+  interpolateVariables(template, variables) {
+    if (!template || typeof template !== 'string') {
+      return template;
+    }
+    
+    return template.replace(/{([^}]+)}/g, (match, variableName) => {
+      const value = variables[variableName];
+      if (value !== undefined && value !== null) {
+        return String(value);
+      }
+      
+      // Check for nested variables (e.g., {user.name})
+      if (variableName.includes('.')) {
+        const parts = variableName.split('.');
+        let nestedValue = variables;
+        
+        for (const part of parts) {
+          if (nestedValue && typeof nestedValue === 'object' && nestedValue[part] !== undefined) {
+            nestedValue = nestedValue[part];
+          } else {
+            nestedValue = undefined;
+            break;
+          }
+        }
+        
+        if (nestedValue !== undefined && nestedValue !== null) {
+          return String(nestedValue);
+        }
+      }
+      
+      // Return original placeholder if variable not found
+      console.warn(`⚠️ Variable not found: ${variableName}`);
+      return match;
+    });
+  }
+
+async copyTemplateElementsWithVariables(projectId, templateData, variables, tenantId) {
+  try {
+    console.log(`📋 Copying template elements with variable injection...`);
+    console.log(`📊 Template data type: ${typeof templateData}, Array: ${Array.isArray(templateData)}`);
+    
+    // Handle both array and object structures
+    const elements = Array.isArray(templateData) 
+      ? templateData 
+      : templateData.elements || Object.values(templateData);
+    
+    console.log(`📋 Found ${elements.length} elements to copy`);
+    
+    let createdCount = 0;
+    
+    for (const elementData of elements) {
+      if (!elementData || !elementData.elementType) {
+        console.log(`⚠️ Skipping invalid element:`, elementData);
+        continue;
+      }
+      
+      try {
+        // Clone element data to avoid modifying original
+        const elementClone = JSON.parse(JSON.stringify(elementData));
+        
+        // Inject variables into element properties
+        elementClone.properties = this.injectVariablesIntoObject(
+          elementClone.properties || {},
+          variables
+        );
+        
+        // Inject variables into element styles
+        elementClone.styles = this.injectVariablesIntoObject(
+          elementClone.styles || {},
+          variables
+        );
+        
+        // Handle special cases like sales rep photos
+        if (elementClone.elementType === 'image' && 
+            elementClone.properties && 
+            elementClone.properties.customElementType === 'sales_rep_photo') {
+          
+          if (variables.rep_photo) {
+            elementClone.properties.src = variables.rep_photo;
+            if (variables.rep_photo_id) {
+              elementClone.assetId = variables.rep_photo_id;
+            }
+          }
+        }
+        
+        // Ensure required fields for database insertion (NO NAME FIELD)
+        const elementToCreate = {
+          projectId: projectId,
+          elementType: elementClone.elementType,
+          position: elementClone.position || { x: 0, y: 0, z: 0 },
+          size: elementClone.size || { width: 100, height: 100 },
+          rotation: elementClone.rotation || 0,
+          scale: elementClone.scale || { x: 1, y: 1 },
+          skew: elementClone.skew || { x: 0, y: 0 },
+          opacity: elementClone.opacity !== undefined ? elementClone.opacity : 1,
+          properties: elementClone.properties || {},
+          styles: elementClone.styles || {},
+          responsiveStyles: elementClone.responsiveStyles || {},
+          animations: elementClone.animations || [],
+          interactions: elementClone.interactions || [],
+          variables: elementClone.variables || {},
+          conditions: elementClone.conditions || {},
+          constraints: elementClone.constraints || {},
+          isLocked: elementClone.isLocked || false,
+          isVisible: elementClone.isVisible !== undefined ? elementClone.isVisible : true,
+          isInteractive: elementClone.isInteractive || false,
+          layerOrder: elementClone.layerOrder || (createdCount + 1),
+          groupId: elementClone.groupId || null,
+          parentId: elementClone.parentId || null,
+          assetId: elementClone.assetId || null,
+          linkedElements: elementClone.linkedElements || [],
+          customCSS: elementClone.customCSS || null,
+          customJS: elementClone.customJS || null
+        };
+        
+        // Create the element in the database
+        const createdElement = await this.contentService.models.ContentElement.create(elementToCreate);
+        createdCount++;
+        
+        console.log(`✅ Created element ${createdElement.id}: ${createdElement.elementType}`);
+        
+      } catch (elementError) {
+        console.error(`❌ Error creating element:`, elementError);
+        console.error(`Element data:`, elementData);
+      }
+    }
+    
+    console.log(`✅ Copied ${createdCount} template elements with variables injected`);
+    
+  } catch (error) {
+    console.error('Error copying template elements:', error);
+    throw new Error(`Failed to copy template elements: ${error.message}`);
+  }
+}
+
+/**
+ * Recursively inject variables into an object
+ */
+injectVariablesIntoObject(obj, variables) {
+  if (typeof obj === 'string') {
+    return this.interpolateVariables(obj, variables);
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => this.injectVariablesIntoObject(item, variables));
+  }
+  
+  if (obj && typeof obj === 'object') {
+    const result = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = this.injectVariablesIntoObject(value, variables);
+    }
+    return result;
+  }
+  
+  return obj;
+}
+
+/**
+ * Enhanced variable extraction with photo support
+ */
+async extractAnnouncementVariablesWithPhoto(contentConfig, payload, tenantId) {
+  const variables = {};
+  const missing = [];
+  const { variableMapping, defaultValues } = contentConfig;
+  
+  // Extract mapped variables
+  for (const [variableName, payloadPath] of Object.entries(variableMapping || {})) {
+    let value = this.getNestedValue(payload, payloadPath);
+    
+    if (value === null || value === undefined || value === '') {
+      // Use default value if available
+      if (defaultValues && defaultValues[variableName] !== undefined) {
+        value = defaultValues[variableName];
+      } else {
+        missing.push(variableName);
+        value = ''; // Set empty string for missing variables
+      }
+    }
+    
+    variables[variableName] = value;
+  }
+  
+  // Special handling for sales rep photos
+  if (variables.rep_email) {
+    try {
+      const photoAsset = await this.findSalesRepPhoto(variables.rep_email, tenantId);
+      if (photoAsset) {
+        variables.rep_photo = photoAsset.publicUrl;
+        variables.rep_photo_thumbnail = photoAsset.thumbnailUrl;
+        console.log(`✅ Found sales rep photo for ${variables.rep_email}`);
+      } else {
+        console.log(`⚠️ No photo found for sales rep: ${variables.rep_email}`);
+        variables.rep_photo = ''; // Set empty for fallback handling
+      }
+    } catch (error) {
+      console.error('Error finding sales rep photo:', error);
+      variables.rep_photo = '';
+    }
+  }
+  
+  // Add system variables
+  variables['system.timestamp'] = new Date().toISOString();
+  variables['system.date'] = new Date().toLocaleDateString();
+  variables['system.time'] = new Date().toLocaleTimeString();
+  
+  return { variables, missing };
+}
+
+/**
+ * Find sales rep photo by email
+ */
+async findSalesRepPhoto(repEmail, tenantId) {
+  try {
+    if (!this.contentService) return null;
+    
+    const normalizedEmail = repEmail.toLowerCase().trim();
+    
+    // Search in content assets for sales rep photos
+    const assets = await this.contentService.getAssets(tenantId, {
+      assetType: 'image',
+      search: normalizedEmail,
+      limit: 1
+    });
+    
+    // Find asset with matching email in metadata
+    const photoAsset = assets.assets?.find(asset => 
+      asset.metadata?.repEmail?.toLowerCase() === normalizedEmail ||
+      asset.metadata?.rep_email?.toLowerCase() === normalizedEmail ||
+      asset.metadata?.email?.toLowerCase() === normalizedEmail
+    );
+    
+    return photoAsset || null;
+    
+  } catch (error) {
+    console.error('Error finding sales rep photo:', error);
+    return null;
+  }
+}
 
   /**
    * ENHANCED OptiSigns publishing with retry logic and detailed error tracking
@@ -958,156 +2047,26 @@ class WebhookService {
     return { variables, missing };
   }
 
-  /**
-   * Enhanced sales rep photo lookup with better debugging and error handling
-   */
-  async getSalesRepPhoto(tenantId, email) {
-    const normalizedEmail = email.toLowerCase().trim();
-    try {
-      console.log(`🔍 Looking for sales rep photo for: ${normalizedEmail}`);
-      
-      const sequelize = this.models.ContentAsset.sequelize;
-      
-      // Enhanced query with multiple email matching strategies and fixed type casting
-      const [results] = await sequelize.query(`
-        SELECT 
-          id, 
-          public_url, 
-          thumbnail_url, 
-          file_path,
-          name,
-          metadata,
-          categories
-        FROM content_assets 
-        WHERE 
-          tenant_id = $1
-          AND processing_status = 'completed'
-          AND (
-            LOWER(metadata->>'repEmail') = $2
-            OR LOWER(metadata->>'rep_email') = $2
-            OR LOWER(metadata->>'email') = $2
-            OR LOWER(metadata->>'salesRepEmail') = $2
-          )
-          AND (
-            categories::varchar[] @> ARRAY['Sales Reps']::varchar[]
-            OR categories::varchar[] @> ARRAY['sales_reps']::varchar[]
-            OR categories::varchar[] @> ARRAY['sales-reps']::varchar[]
-            OR categories::varchar[] @> ARRAY['Sales Rep']::varchar[]
-            OR categories::varchar[] @> ARRAY['sales_rep']::varchar[]
-            OR categories::varchar[] @> ARRAY['salesrep']::varchar[]
-            OR categories::varchar[] @> ARRAY['SalesRep']::varchar[]
-          )
-        ORDER BY created_at DESC 
-        LIMIT 1
-      `, {
-        bind: [tenantId.toString(), normalizedEmail],
-        type: sequelize.QueryTypes.SELECT
-      });
-
-      if (results && results.length > 0) {
-        const asset = results[0];
-        console.log(`✅ Found sales rep photo: ${asset.name} (ID: ${asset.id})`);
-        console.log(`📋 Photo metadata:`, asset.metadata);
-        console.log(`🏷️ Photo categories:`, asset.categories);
-        
-        let publicUrl = asset.public_url;
-        if (!publicUrl && asset.file_path) {
-          const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
-          const fileName = path.basename(asset.file_path);
-          publicUrl = `${baseUrl}/uploads/content/assets/${fileName}`;
-          
-          // Update the public_url in database
-          try {
-            await sequelize.query(`
-              UPDATE content_assets 
-              SET public_url = $1 
-              WHERE id = $2
-            `, {
-              bind: [publicUrl, asset.id]
-            });
-            console.log(`🔗 Generated public URL: ${publicUrl}`);
-          } catch (updateError) {
-            console.warn('⚠️ Could not update public URL in database:', updateError.message);
-          }
-        }
-
-        return {
-          id: asset.id,
-          url: publicUrl,
-          thumbnailUrl: asset.thumbnail_url
-        };
-      }
-
-      // Enhanced debugging - show what photos exist with proper error handling
-      try {
-        const [allPhotos] = await sequelize.query(`
-          SELECT 
-            id, 
-            name,
-            metadata->>'repEmail' as rep_email,
-            metadata->>'email' as email,
-            categories
-          FROM content_assets 
-          WHERE
-            tenant_id = $1
-            AND processing_status = 'completed'
-            AND (
-              categories::varchar[] @> ARRAY['Sales Reps']::varchar[]
-              OR categories::varchar[] @> ARRAY['sales_reps']::varchar[]
-              OR categories::varchar[] @> ARRAY['sales-reps']::varchar[]
-              OR categories::varchar[] @> ARRAY['Sales Rep']::varchar[]
-              OR categories::varchar[] @> ARRAY['sales_rep']::varchar[]
-            )
-          ORDER BY created_at DESC 
-          LIMIT 10
-        `, {
-          bind: [tenantId.toString()],
-          type: sequelize.QueryTypes.SELECT
-        });
-
-        console.log(`❌ No sales rep photo found for: ${normalizedEmail}`);
-        
-        if (allPhotos && Array.isArray(allPhotos) && allPhotos.length > 0) {
-          console.log(`📋 Available sales rep photos (${allPhotos.length}):`, 
-            allPhotos.map(p => ({ 
-              id: p.id, 
-              name: p.name, 
-              repEmail: p.rep_email || p.email,
-              categories: p.categories 
-            }))
-          );
-        } else {
-          console.log(`📋 No sales rep photos found in database for tenant ${tenantId}`);
-        }
-      } catch (debugError) {
-        console.error('❌ Error in debug photo listing:', debugError.message);
-        console.log(`📋 Could not list available photos due to database error`);
-      }
-      
-      return null;
-      
-    } catch (error) {
-      console.error('❌ Error fetching sales rep photo:', error.message);
-      
-      // If it's a database type error, provide helpful information
-      if (error.message.includes('operator does not exist') || error.message.includes('text[] && character varying[]')) {
-        console.error('💡 Database type error detected. This may be due to categories column type mismatch.');
-        console.error('💡 Consider running: ALTER TABLE content_assets ALTER COLUMN categories TYPE text[];');
-      }
-      
-      return null;
+/**
+ * Enhanced fallback photo lookup with proper error handling
+ * This method was missing from the webhook service
+ */
+async getFallbackPhoto(tenantId) {
+  try {
+    console.log(`🔍 Looking for fallback photo for tenant: ${tenantId}`);
+    
+    if (!this.models.ContentAsset) {
+      console.log('❌ ContentAsset model not available');
+      return {
+        id: null,
+        url: DEFAULT_FALLBACK_PHOTO,
+        thumbnailUrl: DEFAULT_FALLBACK_PHOTO
+      };
     }
-  }
-
-  /**
-   * Enhanced fallback photo lookup with proper error handling
-   */
-  async getFallbackPhoto(tenantId) {
+    
+    const sequelize = this.models.ContentAsset.sequelize;
+    
     try {
-      console.log(`🔍 Looking for fallback photo for tenant: ${tenantId}`);
-      
-      const sequelize = this.models.ContentAsset.sequelize;
-      
       const [results] = await sequelize.query(`
         SELECT 
           id, 
@@ -1126,6 +2085,7 @@ class WebhookService {
             OR metadata->>'fallback' = 'true'
             OR LOWER(name) LIKE '%fallback%'
             OR LOWER(name) LIKE '%default%'
+            OR LOWER(name) LIKE '%placeholder%'
           )
         ORDER BY 
           CASE WHEN metadata->>'isFallbackPhoto' = 'true' THEN 1 ELSE 2 END,
@@ -1166,31 +2126,227 @@ class WebhookService {
           thumbnailUrl: asset.thumbnail_url
         };
       }
+    } catch (queryError) {
+      console.warn('⚠️ Fallback photo query failed:', queryError.message);
+    }
 
-      // Use built-in placeholder when no fallback asset exists
-      console.log(`📷 No fallback photo configured for tenant ${tenantId}, using default placeholder`);
-      return {
-        id: null,
-        url: DEFAULT_FALLBACK_PHOTO,
-        thumbnailUrl: DEFAULT_FALLBACK_PHOTO
-      };
+    // Use built-in placeholder when no fallback asset exists
+    console.log(`📷 No fallback photo configured for tenant ${tenantId}, using default placeholder`);
+    return {
+      id: null,
+      url: DEFAULT_FALLBACK_PHOTO,
+      thumbnailUrl: DEFAULT_FALLBACK_PHOTO
+    };
+    
+  } catch (error) {
+    console.error('❌ Error fetching fallback photo:', error.message);
+    
+    // Always return default placeholder on error
+    return {
+      id: null,
+      url: DEFAULT_FALLBACK_PHOTO,
+      thumbnailUrl: DEFAULT_FALLBACK_PHOTO
+    };
+  }
+}
+
+
+/**
+   * Enhanced sales rep photo lookup with proper error handling
+   * SIMPLIFIED VERSION - Focuses on the core issue
+   */
+  async getSalesRepPhoto(tenantId, email) {
+    const normalizedEmail = email.toLowerCase().trim();
+    try {
+      console.log(`🔍 Looking for sales rep photo for: ${normalizedEmail}`);
+      console.log(`🏢 Tenant ID: ${tenantId} (type: ${typeof tenantId})`);
       
-    } catch (error) {
-      console.error('❌ Error fetching fallback photo:', error.message);
-      
-      // If it's a database error, provide helpful information
-      if (error.message.includes('relation') && error.message.includes('does not exist')) {
-        console.error('💡 Database table error detected. Make sure content_assets table exists.');
+      if (!this.models.ContentAsset) {
+        console.log('❌ ContentAsset model not available');
+        return null;
       }
       
-      // Always return default placeholder on error
-      return {
-        id: null,
-        url: DEFAULT_FALLBACK_PHOTO,
-        thumbnailUrl: DEFAULT_FALLBACK_PHOTO
-      };
+      const sequelize = this.models.ContentAsset.sequelize;
+      
+      // First, let's use Sequelize ORM to get all assets for this tenant
+      console.log('🔍 Step 1: Getting all assets using Sequelize ORM...');
+      
+      try {
+        const allAssets = await this.models.ContentAsset.findAll({
+          where: {
+            tenantId: tenantId.toString()
+          },
+          order: [['createdAt', 'DESC']],
+          limit: 10
+        });
+        
+        console.log(`📊 Found ${allAssets.length} assets for tenant ${tenantId}`);
+        
+        if (allAssets.length > 0) {
+          console.log('📋 All assets for this tenant:');
+          allAssets.forEach((asset, index) => {
+            console.log(`  ${index + 1}. "${asset.name}" (ID: ${asset.id})`);
+            console.log(`     Categories: ${JSON.stringify(asset.categories)}`);
+            console.log(`     Status: ${asset.processingStatus}`);
+            console.log(`     Created: ${asset.createdAt}`);
+            console.log(`     Public URL: ${asset.publicUrl}`);
+            console.log(`     File Path: ${asset.filePath}`);
+            console.log(`     Metadata: ${JSON.stringify(asset.metadata, null, 2)}`);
+            console.log(`     ----`);
+          });
+          
+          // Now search for matching email
+          console.log(`🔍 Step 2: Searching for email match: ${normalizedEmail}`);
+          
+          const matchingAssets = allAssets.filter(asset => {
+            const metadata = asset.metadata || {};
+            const repEmail = metadata.repEmail?.toLowerCase();
+            const rep_email = metadata.rep_email?.toLowerCase();
+            const email = metadata.email?.toLowerCase();
+            const salesRepEmail = metadata.salesRepEmail?.toLowerCase();
+            
+            const hasMatch = (
+              repEmail === normalizedEmail ||
+              rep_email === normalizedEmail ||
+              email === normalizedEmail ||
+              salesRepEmail === normalizedEmail
+            );
+            
+            if (hasMatch) {
+              console.log(`✅ Found email match in asset: ${asset.name}`);
+              console.log(`   Matched on: repEmail=${repEmail}, rep_email=${rep_email}, email=${email}, salesRepEmail=${salesRepEmail}`);
+            }
+            
+            return hasMatch;
+          });
+          
+          if (matchingAssets.length > 0) {
+            console.log(`🎯 Found ${matchingAssets.length} assets with matching email`);
+            
+            // Get the first completed asset, or the most recent
+            const bestAsset = matchingAssets.find(a => a.processingStatus === 'completed') || matchingAssets[0];
+            
+            console.log(`🎯 Using asset: ${bestAsset.name} (Status: ${bestAsset.processingStatus})`);
+            
+            // Check if it has sales rep categories
+            const categories = bestAsset.categories || [];
+            const hasSalesRepCategory = categories.some(cat => 
+              cat.toLowerCase().includes('sales') || 
+              cat.toLowerCase().includes('rep')
+            );
+            
+            if (!hasSalesRepCategory) {
+              console.log(`⚠️ Asset found but missing sales rep categories. Categories: ${JSON.stringify(categories)}`);
+              console.log(`💡 The asset exists but might not be categorized as a sales rep photo`);
+            }
+            
+            let publicUrl = bestAsset.publicUrl;
+            
+            if (!publicUrl && bestAsset.filePath) {
+              const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
+              const fileName = path.basename(bestAsset.filePath);
+              publicUrl = `${baseUrl}/uploads/content/assets/${fileName}`;
+              
+              console.log(`🔗 Generated public URL from file path: ${publicUrl}`);
+              
+              // Update the public URL
+              try {
+                await bestAsset.update({ publicUrl });
+                console.log(`✅ Saved public URL to database`);
+              } catch (updateError) {
+                console.warn('⚠️ Could not update public URL:', updateError.message);
+              }
+            }
+
+            return {
+              id: bestAsset.id,
+              url: publicUrl,
+              thumbnailUrl: bestAsset.thumbnailUrl
+            };
+          } else {
+            console.log(`❌ No assets found with email: ${normalizedEmail}`);
+            
+            console.log('🔍 Step 3: Checking what emails are actually stored...');
+            allAssets.forEach(asset => {
+              const metadata = asset.metadata || {};
+              const emails = [
+                metadata.repEmail,
+                metadata.rep_email, 
+                metadata.email,
+                metadata.salesRepEmail
+              ].filter(Boolean);
+              
+              if (emails.length > 0) {
+                console.log(`  📧 Asset "${asset.name}" has emails: ${emails.join(', ')}`);
+              } else {
+                console.log(`  📧 Asset "${asset.name}" has NO email metadata`);
+              }
+            });
+          }
+          
+          // Also check for sales rep categories
+          console.log('🔍 Step 4: Checking for any assets with sales rep categories...');
+          
+          const salesRepAssets = allAssets.filter(asset => {
+            const categories = asset.categories || [];
+            return categories.some(cat => 
+              cat.toLowerCase().includes('sales') || 
+              cat.toLowerCase().includes('rep')
+            );
+          });
+          
+          if (salesRepAssets.length > 0) {
+            console.log(`📋 Found ${salesRepAssets.length} assets with sales rep categories:`);
+            salesRepAssets.forEach(asset => {
+              console.log(`  - ${asset.name} (${asset.id})`);
+              console.log(`    Categories: ${JSON.stringify(asset.categories)}`);
+              console.log(`    Metadata: ${JSON.stringify(asset.metadata)}`);
+            });
+          } else {
+            console.log('❌ No assets found with sales rep categories');
+          }
+        } else {
+          console.log('❌ No assets found for this tenant');
+        }
+        
+      } catch (ormError) {
+        console.error('❌ Error using Sequelize ORM:', ormError.message);
+        
+        // Fallback to raw SQL
+        console.log('🔄 Falling back to raw SQL query...');
+        
+        const results = await sequelize.query(`
+          SELECT 
+            id, 
+            name,
+            categories,
+            metadata,
+            processing_status,
+            created_at,
+            public_url,
+            file_path
+          FROM content_assets 
+          WHERE tenant_id = $1
+          ORDER BY created_at DESC
+          LIMIT 10;
+        `, {
+          bind: [tenantId.toString()],
+          type: sequelize.QueryTypes.SELECT
+        });
+        
+        console.log('📋 Raw SQL results:', results);
+      }
+      
+      console.log(`❌ No matching sales rep photo found for: ${normalizedEmail}`);
+      return null;
+      
+    } catch (error) {
+      console.error('❌ Error fetching sales rep photo:', error.message);
+      console.error('📋 Full error stack:', error.stack);
+      return null;
     }
   }
+
 
   /**
    * Duplicate a system project for the specified tenant
@@ -1426,291 +2582,246 @@ class WebhookService {
   }
 
   /**
-   * Get target displays for announcement with enhanced debugging and fallback logic
-   */
-  async getAnnouncementTargetDisplays(tenantId, displaySelection, payload) {
-    const { mode, displayIds, displayGroups, conditionalRules } = displaySelection;
-    
-    let targetDisplays = [];
-    
-    try {
-      console.log(`🔍 Display selection mode: ${mode}`);
-      
-      switch (mode) {
-        case 'all':
-          // Get all active and online displays
-          console.log('🔍 Fetching all active and online displays...');
-          targetDisplays = await this.models.OptisignsDisplay.findAll({
-            where: {
-              tenantId: tenantId.toString(),
-              isActive: true,
-              isOnline: true
-            }
-          });
-          console.log(`📊 Found ${targetDisplays.length} active & online displays`);
-          break;
-          
-        case 'specific':
-          // Get specific displays by ID with enhanced fallback logic
-          console.log('🔍 Fetching specific displays by ID:', displayIds);
-          if (displayIds && displayIds.length > 0) {
-            targetDisplays = await this.models.OptisignsDisplay.findAll({
-              where: {
-                id: { [Op.in]: displayIds },
-                tenantId: tenantId.toString(),
-                isActive: true
-              }
-            });
-            console.log(`📊 Found ${targetDisplays.length} specific displays out of ${displayIds.length} requested`);
-            
-            // If no specific displays found, check if any displays exist and offer fallback
-            if (targetDisplays.length === 0) {
-              console.log('❌ No specific displays found, checking if any displays exist...');
-              
-              const allDisplays = await this.models.OptisignsDisplay.findAll({
-                where: {
-                  tenantId: tenantId.toString(),
-                  isActive: true,
-                  isOnline: true
-                }
-              });
-              
-              if (allDisplays.length > 0) {
-                console.log(`💡 Found ${allDisplays.length} other active displays. Consider updating the webhook configuration with valid display IDs.`);
-                console.log(`📋 Available display IDs:`, allDisplays.map(d => `${d.name} (${d.id})`));
-                
-                // Optional: Enable fallback to all displays when specific ones aren't found
-                // Uncomment the next two lines to enable this fallback behavior
-                // console.log('🔄 Falling back to all active displays...');
-                // targetDisplays = allDisplays;
-              } else {
-                console.log('❌ No active displays found at all');
-              }
-            }
-          } else {
-            console.log('❌ No display IDs provided for specific mode');
-          }
-          break;
-          
-        case 'group':
-          // Get displays by group/location
-          console.log('🔍 Fetching displays by location:', displayGroups);
-          if (displayGroups && displayGroups.length > 0) {
-            targetDisplays = await this.models.OptisignsDisplay.findAll({
-              where: {
-                location: { [Op.in]: displayGroups },
-                tenantId: tenantId.toString(),
-                isActive: true,
-                isOnline: true
-              }
-            });
-            console.log(`📊 Found ${targetDisplays.length} displays in specified locations`);
-            
-            // If no displays found in specified locations, show what locations are available
-            if (targetDisplays.length === 0) {
-              const allDisplays = await this.models.OptisignsDisplay.findAll({
-                where: { tenantId: tenantId.toString() }
-              });
-              const availableLocations = [...new Set(allDisplays.map(d => d.location).filter(Boolean))];
-              console.log(`💡 No displays found in specified locations. Available locations:`, availableLocations);
-            }
-          } else {
-            console.log('❌ No display groups provided for group mode');
-          }
-          break;
-          
-        case 'conditional':
-          // Apply conditional rules based on payload
-          console.log('🔍 Applying conditional rules...');
-          if (conditionalRules?.enabled && conditionalRules.conditions) {
-            for (const rule of conditionalRules.conditions) {
-              const fieldValue = this.getNestedValue(payload, rule.field);
-              console.log(`🔍 Checking condition: ${rule.field} ${rule.operator} ${rule.value} (payload value: ${fieldValue})`);
-              
-              if (this.evaluateCondition(fieldValue, rule.operator, rule.value)) {
-                console.log(`✅ Condition matched, adding displays:`, rule.displayIds);
-                const displays = await this.models.OptisignsDisplay.findAll({
-                  where: {
-                    id: { [Op.in]: rule.displayIds },
-                    tenantId: tenantId.toString(),
-                    isActive: true
-                  }
-                });
-                targetDisplays.push(...displays);
-              } else {
-                console.log(`❌ Condition not matched`);
-              }
-            }
-          } else {
-            console.log('❌ No conditional rules configured');
-          }
-          break;
-          
-        default:
-          console.log(`❌ Unknown display selection mode: ${mode}`);
-          // Fallback to all displays for unknown modes
-          console.log('🔄 Falling back to all active displays...');
-          targetDisplays = await this.models.OptisignsDisplay.findAll({
-            where: {
-              tenantId: tenantId.toString(),
-              isActive: true,
-              isOnline: true
-            }
-          });
-      }
-    } catch (error) {
-      console.error('❌ Error querying displays:', error);
-      // If there's a database error, return empty array
+ * Get target displays for announcement based on selection criteria
+ */
+async getAnnouncementTargetDisplays(tenantId, displaySelection, payload) {
+  try {
+    console.log('🔍 Getting target displays for announcement...', {
+      mode: displaySelection.mode,
+      tenantId
+    });
+
+    if (!this.optisignsService) {
+      console.warn('⚠️ OptiSigns service not available');
       return [];
     }
-    
-    // Remove duplicates
-    const uniqueDisplays = [];
-    const seenIds = new Set();
-    
-    for (const display of targetDisplays) {
-      if (!seenIds.has(display.id)) {
-        seenIds.add(display.id);
-        uniqueDisplays.push(display);
-      }
-    }
-    
-    console.log(`🎯 Final target displays after deduplication: ${uniqueDisplays.length}`);
-    
-    // Enhanced logging when no displays are found
-    if (uniqueDisplays.length === 0) {
-      console.log('⚠️ No displays targeted. Recommendations:');
-      console.log('   1. Check display selection mode and criteria');
-      console.log('   2. Verify display IDs exist in database');
-      console.log('   3. Ensure displays are active and online');
-      console.log('   4. Consider using "all" mode for testing');
-    }
-    
-    return uniqueDisplays;
-  }
 
-  /**
-   * Restore displays after announcement duration
-   */
-  async restoreDisplaysAfterAnnouncement(tenantId, takeoverIds) {
-    try {
-      console.log('🔄 Restoring displays after announcement...');
-      
-      for (const takeoverId of takeoverIds) {
-        try {
-          // Find the takeover record
-          const takeover = await this.models.OptisignsTakeover.findOne({
-            where: {
-              id: takeoverId,
-              tenantId: tenantId.toString(),
-              status: 'ACTIVE'
-            }
-          });
-          
-          if (takeover) {
-            await this.optisignsService.stopTakeover(
-              tenantId,
-              takeover.displayId,
-              true, // Restore previous content
-              'Announcement duration expired'
-            );
+    let displays = [];
+
+    switch (displaySelection.mode) {
+      case 'all':
+        // Get all active displays for tenant
+        displays = await this.models.OptisignsDisplay?.findAll({
+          where: {
+            tenantId: tenantId,
+            isActive: true
           }
-        } catch (error) {
-          console.error(`Failed to restore takeover ${takeoverId}:`, error.message);
+        }) || [];
+        break;
+
+      case 'specific':
+        // Get specific displays by IDs
+        if (displaySelection.displayIds && displaySelection.displayIds.length > 0) {
+          displays = await this.models.OptisignsDisplay?.findAll({
+            where: {
+              id: displaySelection.displayIds,
+              tenantId: tenantId,
+              isActive: true
+            }
+          }) || [];
         }
-      }
-      
-    } catch (error) {
-      console.error('Error restoring displays:', error);
-    }
-  }
+        break;
 
-  /**
-   * Execute post-announcement actions
-   */
-  async executePostAnnouncementActions(actions, webhookEndpoint, payload, contentProject) {
-    if (!actions || actions.length === 0) {
-      return;
-    }
-
-    for (const action of actions) {
-      try {
-        switch (action.type) {
-          case 'create_lead':
-            // Create a lead from the announcement data
-            await this.createLeadFromAnnouncement(action.config, payload, webhookEndpoint);
-            break;
-            
-          case 'send_notification':
-            // Send notification about the announcement
-            console.log(`📧 Would send notification: ${action.config.message}`);
-            break;
-            
-          case 'log_event':
-            // Log custom event
-            console.log(`📝 Logging event: ${action.config.eventName}`);
-            break;
+      case 'group':
+        // Get displays by group/tag
+        if (displaySelection.displayGroups && displaySelection.displayGroups.length > 0) {
+          displays = await this.models.OptisignsDisplay?.findAll({
+            where: {
+              tenantId: tenantId,
+              isActive: true,
+              tags: {
+                [this.models.Sequelize.Op.overlap]: displaySelection.displayGroups
+              }
+            }
+          }) || [];
         }
-      } catch (error) {
-        console.error(`Post-announcement action failed: ${action.type}`, error);
-      }
-    }
-  }
+        break;
 
-  /**
-   * Create lead from announcement data
-   */
-  async createLeadFromAnnouncement(config, payload, webhookEndpoint) {
-    const leadData = {
-      tenantId: webhookEndpoint.tenantId,
-      source: 'announcement_webhook',
-      status: 'new',
-      metadata: {
-        announcementPayload: payload,
-        webhookEndpointId: webhookEndpoint.id
-      }
-    };
-    
-    // Map fields from config
-    if (config.fieldMapping) {
-      for (const [leadField, payloadPath] of Object.entries(config.fieldMapping)) {
-        const value = this.getNestedValue(payload, payloadPath);
-        if (value !== undefined) {
-          leadData[leadField] = value;
-        }
-      }
-    }
-    
-    // Only create if we have minimum required data
-    if (leadData.name || leadData.phone || leadData.email) {
-      await this.models.Lead.create(leadData);
-      console.log('✅ Lead created from announcement');
-    }
-  }
+      case 'conditional':
+        // Get displays based on conditional logic (payload-based)
+        displays = await this.getConditionalDisplays(
+          tenantId, 
+          displaySelection.conditionalSelection, 
+          payload
+        );
+        break;
 
-  /**
-   * Evaluate a condition
-   */
-  evaluateCondition(fieldValue, operator, conditionValue) {
-    switch (operator) {
-      case 'equals':
-        return fieldValue == conditionValue;
-      case 'not_equals':
-        return fieldValue != conditionValue;
-      case 'greater_than':
-        return Number(fieldValue) > Number(conditionValue);
-      case 'less_than':
-        return Number(fieldValue) < Number(conditionValue);
-      case 'contains':
-        return String(fieldValue).includes(String(conditionValue));
-      case 'exists':
-        return fieldValue !== null && fieldValue !== undefined;
-      case 'not_exists':
-        return fieldValue === null || fieldValue === undefined;
       default:
-        return false;
+        console.warn(`⚠️ Unknown display selection mode: ${displaySelection.mode}`);
+        displays = [];
     }
+
+    console.log(`📊 Found ${displays.length} target displays`);
+    return displays;
+
+  } catch (error) {
+    console.error('❌ Error getting target displays:', error);
+    return [];
   }
+}
+
+/**
+ * Get displays based on conditional selection criteria
+ */
+async getConditionalDisplays(tenantId, conditionalSelection, payload) {
+  try {
+    if (!conditionalSelection.enabled || !conditionalSelection.conditions) {
+      return [];
+    }
+
+    // Start with all active displays
+    let displays = await this.models.OptisignsDisplay?.findAll({
+      where: {
+        tenantId: tenantId,
+        isActive: true
+      }
+    }) || [];
+
+    // Filter displays based on conditions
+    for (const condition of conditionalSelection.conditions) {
+      const payloadValue = this.getNestedValue(payload, condition.field);
+      
+      displays = displays.filter(display => {
+        // Check if display matches the condition
+        // This could be extended to check display metadata, location, etc.
+        const displayValue = this.getNestedValue(display.metadata || {}, condition.field);
+        return this.evaluateCondition(displayValue || payloadValue, condition.operator, condition.value);
+      });
+    }
+
+    return displays;
+
+  } catch (error) {
+    console.error('❌ Error in conditional display selection:', error);
+    return [];
+  }
+}
+
+
+/**
+ * Check announcement trigger conditions
+ */
+async checkAnnouncementTriggerConditions(announcementConfig, payload, tenantId) {
+  try {
+    const triggerConditions = announcementConfig.advanced?.triggerConditions;
+    
+    if (!triggerConditions?.enabled) {
+      console.log('✅ Trigger conditions disabled, allowing announcement');
+      return true;
+    }
+
+    console.log('🔍 Checking announcement trigger conditions...');
+
+    // Time-based restrictions
+    if (triggerConditions.timeRestrictions?.enabled) {
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+
+      const allowedHours = triggerConditions.timeRestrictions.allowedHours;
+      const allowedDays = triggerConditions.timeRestrictions.allowedDays || [0,1,2,3,4,5,6];
+
+      if (allowedHours && (currentHour < allowedHours.start || currentHour >= allowedHours.end)) {
+        console.log(`⏰ Time restriction: Current hour ${currentHour} not in allowed range ${allowedHours.start}-${allowedHours.end}`);
+        return false;
+      }
+
+      if (!allowedDays.includes(currentDay)) {
+        console.log(`📅 Day restriction: Current day ${currentDay} not in allowed days ${allowedDays}`);
+        return false;
+      }
+    }
+
+    // Rate limiting
+    if (triggerConditions.rateLimiting?.enabled) {
+      const rateLimiting = triggerConditions.rateLimiting;
+      const now = new Date();
+      
+      // Check recent announcements
+      const recentAnnouncements = await this.models.AnnouncementMetric?.count({
+        where: {
+          tenantId: tenantId,
+          announcementStartTime: {
+            [this.models.Sequelize.Op.gte]: new Date(now.getTime() - (rateLimiting.cooldownMinutes || 5) * 60 * 1000)
+          }
+        }
+      }) || 0;
+
+      if (recentAnnouncements > 0) {
+        console.log(`⏱️ Rate limit: Last announcement was too recent`);
+        return false;
+      }
+    }
+
+    // Payload conditions
+    if (triggerConditions.payloadConditions?.enabled) {
+      for (const condition of triggerConditions.payloadConditions.conditions) {
+        const fieldValue = this.getNestedValue(payload, condition.field);
+        if (!this.evaluateCondition(fieldValue, condition.operator, condition.value)) {
+          console.log(`❌ Payload condition failed: ${condition.field} ${condition.operator} ${condition.value}`);
+          return false;
+        }
+      }
+    }
+
+    console.log('✅ All trigger conditions passed');
+    return true;
+
+  } catch (error) {
+    console.error('❌ Error checking trigger conditions:', error);
+    // Default to allowing announcement if check fails
+    return true;
+  }
+}
+
+/**
+ * Evaluate a condition (used for trigger conditions and display selection)
+ */
+evaluateCondition(value, operator, expectedValue) {
+  switch (operator) {
+    case 'equals':
+      return value == expectedValue;
+    case 'not_equals':
+      return value != expectedValue;
+    case 'contains':
+      return String(value || '').toLowerCase().includes(String(expectedValue || '').toLowerCase());
+    case 'not_contains':
+      return !String(value || '').toLowerCase().includes(String(expectedValue || '').toLowerCase());
+    case 'starts_with':
+      return String(value || '').toLowerCase().startsWith(String(expectedValue || '').toLowerCase());
+    case 'ends_with':
+      return String(value || '').toLowerCase().endsWith(String(expectedValue || '').toLowerCase());
+    case 'greater_than':
+      return parseFloat(value) > parseFloat(expectedValue);
+    case 'less_than':
+      return parseFloat(value) < parseFloat(expectedValue);
+    case 'greater_equal':
+      return parseFloat(value) >= parseFloat(expectedValue);
+    case 'less_equal':
+      return parseFloat(value) <= parseFloat(expectedValue);
+    case 'exists':
+      return value !== null && value !== undefined && value !== '';
+    case 'not_exists':
+      return value === null || value === undefined || value === '';
+    case 'regex':
+      try {
+        const regex = new RegExp(expectedValue);
+        return regex.test(String(value || ''));
+      } catch (error) {
+        console.warn('Invalid regex pattern:', expectedValue);
+        return false;
+      }
+    case 'in_array':
+      const expectedArray = Array.isArray(expectedValue) ? expectedValue : [expectedValue];
+      return expectedArray.includes(value);
+    case 'not_in_array':
+      const notExpectedArray = Array.isArray(expectedValue) ? expectedValue : [expectedValue];
+      return !notExpectedArray.includes(value);
+    default:
+      console.warn(`Unknown operator: ${operator}`);
+      return false;
+  }
+}
 
   /**
    * Get nested value from object using dot notation

@@ -46,6 +46,105 @@ module.exports = function(app, sequelize, authenticateToken, contentModels, opti
     next();
   };
 
+
+// GET endpoint for project preview (for webhooks and direct access)
+  app.get('/api/content/projects/:projectId/preview', async (req, res) => {
+    try {
+      console.log(`🔍 Project preview request: ${req.params.projectId}`);
+      
+      // Allow both authenticated and unauthenticated access for webhooks
+      let tenantId;
+      let project;
+      
+      if (req.user && req.user.tenantId) {
+        // Authenticated request
+        tenantId = req.user.tenantId;
+        project = await contentService.getProjectWithElements(
+          req.params.projectId,
+          tenantId
+        );
+      } else {
+        // Unauthenticated request - try to find project by ID
+        console.log('🔓 Unauthenticated preview request, attempting to find project...');
+        
+        try {
+          project = await contentService.models.ContentProject.findOne({
+            where: { id: req.params.projectId },
+            include: [{
+              model: contentService.models.ContentElement,
+              as: 'elements',
+              include: [{
+                model: contentService.models.ContentAsset,
+                as: 'asset'
+              }]
+            }]
+          });
+          
+          if (project) {
+            tenantId = project.tenantId;
+            console.log(`✅ Found project for tenant: ${tenantId}`);
+          }
+        } catch (findError) {
+          console.error('❌ Error finding project:', findError.message);
+          throw new Error('Project not found');
+        }
+      }
+      
+      if (!project) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+      
+      console.log(`📋 Project found: ${project.name} (${project.elements?.length || 0} elements)`);
+      
+      // Generate HTML preview
+      console.log('🎨 Generating HTML preview...');
+      const htmlStart = Date.now();
+      
+      const htmlContent = await contentService.generateProjectHTML(project, {
+        publicServing: true,
+        useBase64Images: true,
+        baseUrl: `${req.protocol}://${req.get('host')}`,
+        projectId: project.id
+      });
+      
+      const htmlTime = Date.now() - htmlStart;
+      const htmlSize = Buffer.byteLength(htmlContent, 'utf8');
+      const htmlSizeMB = (htmlSize / 1024 / 1024).toFixed(2);
+      
+      console.log(`📊 HTML generation took: ${htmlTime}ms`);
+      console.log(`📏 HTML size: ${htmlSize} bytes (${htmlSizeMB} MB)`);
+      
+      // Set appropriate headers
+      res.set({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'public, max-age=300',
+        'X-Project-ID': project.id,
+        'X-Content-Size': htmlSize.toString(),
+        'X-Generation-Time': htmlTime.toString()
+      });
+      
+      console.log(`✅ Project preview served successfully`);
+      res.send(htmlContent);
+      
+    } catch (error) {
+      console.error('❌ Error serving project preview:', error.message);
+      
+      const errorHtml = `<!DOCTYPE html>
+<html><head><title>Preview Error</title></head>
+<body>
+  <h1>Preview Generation Error</h1>
+  <p><strong>Error:</strong> ${error.message}</p>
+  <p><strong>Project ID:</strong> ${req.params.projectId}</p>
+  <p><strong>Time:</strong> ${new Date().toISOString()}</p>
+</body></html>`;
+      
+      res.set('Content-Type', 'text/html');
+      res.status(500).send(errorHtml);
+    }
+  });
+
+
+
   // ===== OPTISYNC API ENDPOINTS FOR OPTISIGNS INTEGRATION =====
   
   // OptiSync data feed endpoint - for OptiSigns API Gateway
