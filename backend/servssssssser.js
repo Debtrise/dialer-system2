@@ -723,6 +723,63 @@ app.put('/api/dids/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Bulk upload DIDs via CSV
+app.post('/api/dids/upload', authenticateToken, async (req, res) => {
+  try {
+    const { fileContent } = req.body;
+    const tenantId = req.user.tenantId;
+
+    if (!fileContent) {
+      return res.status(400).json({ error: 'fileContent is required' });
+    }
+
+    const rows = [];
+    const stream = Readable.from(fileContent);
+    await new Promise((resolve, reject) => {
+      stream
+        .pipe(csv())
+        .on('data', data => rows.push(data))
+        .on('end', resolve)
+        .on('error', reject);
+    });
+
+    const didsData = rows.map(row => ({
+      phoneNumber: row.phoneNumber || row.phone || row.number,
+      description: row.description || row.desc || '',
+      areaCode: row.areaCode || row.area_code,
+      state: row.state,
+      isActive: row.isActive !== 'false' && row.is_active !== 'false'
+    })).filter(d => d.phoneNumber);
+
+    if (didsData.length === 0) {
+      return res.status(400).json({ error: 'No valid DID data found in CSV' });
+    }
+
+    let created = 0;
+    for (const data of didsData) {
+      const phone = data.phoneNumber.replace(/\D/g, '');
+      if (!/^\d{10,15}$/.test(phone)) {
+        continue;
+      }
+
+      const [did, wasCreated] = await DID.findOrCreate({
+        where: { tenantId, phoneNumber: data.phoneNumber },
+        defaults: {
+          description: data.description,
+          areaCode: data.areaCode || phone.substring(0, 3),
+          state: data.state,
+          isActive: data.isActive
+        }
+      });
+      if (wasCreated) created++;
+    }
+
+    res.status(201).json({ message: `${created} DIDs imported`, imported: created });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Reports routes
 app.get('/api/reports/daily', authenticateToken, async (req, res) => {
   try {
