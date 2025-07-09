@@ -517,6 +517,12 @@ async function initializeModules() {
   stageRoutes(app, sequelize, authenticateToken);
   console.log('Stage Routes module initialized successfully');
 
+  // Initialize DID Routes
+  console.log('Initializing DID Routes module...');
+  const didRoutes = require('../shared/did-routes');
+  didRoutes(app, sequelize, authenticateToken);
+  console.log('DID Routes module initialized successfully');
+
   console.log('Initializing Tenant Routes module...');
   const tenantRoutes = require('../shared/tenant-routes');
   tenantRoutes(app, sequelize, authenticateToken);
