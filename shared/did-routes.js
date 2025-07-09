@@ -409,3 +409,4 @@ module.exports = function(app, sequelize, authenticateToken) {
     router,
     service: didService
   };
+};
